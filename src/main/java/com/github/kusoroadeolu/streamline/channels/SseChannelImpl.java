@@ -2,6 +2,7 @@ package com.github.kusoroadeolu.streamline.channels;
 
 import com.github.kusoroadeolu.streamline.exceptions.SseChannelCompletedException;
 import com.github.kusoroadeolu.streamline.exceptions.SseIOException;
+import com.github.kusoroadeolu.streamline.utils.ApiUtils;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -12,6 +13,7 @@ import java.util.function.Consumer;
 
 import static com.github.kusoroadeolu.streamline.channels.ChannelStatus.*;
 import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertNotNull;
+import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertPositive;
 
 public class SseChannelImpl implements SseChannel {
 
@@ -27,7 +29,7 @@ public class SseChannelImpl implements SseChannel {
         this.channelStatus = ACTIVE;
     }
 
-    public static SseChannelImplBuilder builder(){
+    public static SseChannelBuilder builder(){
         return new SseChannelImplBuilder();
     }
 
@@ -85,45 +87,53 @@ class SseChannelImplBuilder implements SseChannelBuilder{
     protected SseEmitter emitter;
     protected final ExecutorService executor;
     protected final ReentrantLock statusLock;
+    protected long timeout;
     private final static String SSE_NULL_MESSAGE = "Sse emitter cannot be null";
-    private final static long DEFAULT_TIMEOUT = 60_000;
+    private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";
+    private final static long DEFAULT_TIMEOUT = 60_000L;
 
 
-    public SseChannelImplBuilder(SseEmitter emitter, ExecutorService executor){
-        this.emitter = emitter;
+     SseChannelImplBuilder(ExecutorService executor){
         this.executor = executor;
+        this.timeout = DEFAULT_TIMEOUT;
         this.statusLock = new ReentrantLock();
     }
 
-    public SseChannelImplBuilder(){
-        this(new SseEmitter(DEFAULT_TIMEOUT), Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()));
+     SseChannelImplBuilder(){
+        this(Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()));
     }
 
 
-    public SseChannelImplBuilder onCompletion(Runnable callback){
+    public SseChannelBuilder onCompletion(Runnable callback){
         this.emitter.onCompletion(callback);
         return this;
     }
 
-    public SseChannelImplBuilder onError(Consumer<Throwable> callback){
+    public SseChannelBuilder onError(Consumer<Throwable> callback){
         this.emitter.onError(callback);
         return this;
     }
 
-    public SseChannelImplBuilder onTimeout(Runnable callback){
+    public SseChannelBuilder onTimeout(Runnable callback){
         this.emitter.onTimeout(callback);
         return this;
     }
 
-    public SseChannelImplBuilder fromEmitter(SseEmitter emitter){
+    public SseChannelBuilder fromEmitter(SseEmitter emitter){
         assertNotNull(emitter, SSE_NULL_MESSAGE);
         this.emitter = emitter;
         return this;
     }
 
+    public SseChannelBuilder withTimeout(long timeout){
+        assertPositive(timeout, TIMEOUT_NEGATIVE_MESSAGE);
+        this.timeout = timeout;
+        return this;
+    }
+
 
     public SseChannelImpl build(){
-        assertNotNull(this.emitter, SSE_NULL_MESSAGE);
+        if (this.emitter == null) this.emitter = new SseEmitter(this.timeout);
         return new SseChannelImpl(this);
     }
 

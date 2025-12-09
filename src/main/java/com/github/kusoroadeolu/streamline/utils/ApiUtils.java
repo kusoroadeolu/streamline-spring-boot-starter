@@ -8,6 +8,10 @@ public class ApiUtils {
         if (isNull(o)) throw new IllegalArgumentException(message);
     }
 
+    public static void assertPositive(Number val, String message){
+        if (val.longValue() < 0) throw new IllegalArgumentException(message);
+    }
+
     private static boolean isNull(Object o){
         return o == null;
     }
