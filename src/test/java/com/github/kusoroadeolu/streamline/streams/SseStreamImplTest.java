@@ -184,12 +184,19 @@ class SseStreamImplTest {
     }
 
 
+    @Test
+    void onEmitterComplete_shouldNotThrow_OnStreamComplete(){
+        stream.getEmitter().complete();
+        assertDoesNotThrow(() -> stream.complete());
+    }
+
+
 
 }
 
 record TestEvent(int id, String name, String content){}
 
-class FakeEmitter extends SseEmitter{
+class FakeEmitter extends ImmutableSseEmitter{
     public List<TestEvent> sent = new ArrayList<>();
     public Thread senderThread =  null;
     public FakeEmitter() { super(Long.MAX_VALUE); }

@@ -11,7 +11,9 @@ public interface SseStreamBuilder {
 
     SseStreamBuilder onTimeout(Runnable callback);
 
-    SseStreamBuilder fromEmitter(SseEmitter emitter);
+    SseStreamBuilder fromEmitter(ImmutableSseEmitter emitter);
+
+    SseStreamBuilder withTimeout(long timeout);
 
     SseStream build();
 }

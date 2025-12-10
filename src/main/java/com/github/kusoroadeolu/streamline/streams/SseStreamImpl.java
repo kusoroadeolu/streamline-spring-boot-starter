@@ -2,6 +2,7 @@ package com.github.kusoroadeolu.streamline.streams;
 
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamCompletedException;
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamIOException;
+import com.github.kusoroadeolu.streamline.utils.ApiUtils;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -20,7 +21,7 @@ import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertPositive;
 
 public class SseStreamImpl implements SseStream {
 
-    private final SseEmitter emitter;
+    private final ImmutableSseEmitter emitter;
     private final ExecutorService executorService;
     private final ReentrantLock statusLock;
     private volatile StreamStatus streamStatus;
@@ -81,15 +82,14 @@ public class SseStreamImpl implements SseStream {
         }
     }
 
-    private boolean isCompleted(){
-        assert this.statusLock.isHeldByCurrentThread() : "StreamStatus lock must be held";
+    public boolean isCompleted(){
         return this.streamStatus == COMPLETED;
     }
 
 }
 
 class SseStreamImplBuilder implements SseStreamBuilder {
-    protected SseEmitter emitter;
+    protected ImmutableSseEmitter emitter;
     protected final ExecutorService executor;
     protected final ReentrantLock statusLock;
 
@@ -109,9 +109,9 @@ class SseStreamImplBuilder implements SseStreamBuilder {
         this.statusLock = new ReentrantLock();
     }
 
-    SseStreamImplBuilder(SseEmitter emitter){
+    SseStreamImplBuilder(ImmutableSseEmitter emitter){
         this(Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()));
-        this.emitter = emitter;
+        this.emitter =  emitter;
     }
 
      SseStreamImplBuilder(){
@@ -133,7 +133,7 @@ class SseStreamImplBuilder implements SseStreamBuilder {
         return this;
     }
 
-    public SseStreamBuilder fromEmitter(SseEmitter emitter){
+    public SseStreamBuilder fromEmitter(ImmutableSseEmitter emitter){
         assertNotNull(emitter, SSE_NULL_MESSAGE);
         this.emitter = emitter;
         return this;
@@ -147,11 +147,13 @@ class SseStreamImplBuilder implements SseStreamBuilder {
 
 
     public SseStream build(){
-        if (this.emitter == null) this.emitter = new SseEmitter(this.timeout);
+        if (this.emitter == null) this.emitter = new ImmutableSseEmitter(this.timeout);
         final SseStream stream = new SseStreamImpl(this);
         this.configureCallback(stream);
         return stream;
     }
+
+
 
     private void configureCallback(SseStream stream){
          this.emitter.onTimeout(() -> {

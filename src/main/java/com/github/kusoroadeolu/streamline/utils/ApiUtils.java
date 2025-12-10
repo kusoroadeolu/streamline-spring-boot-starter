@@ -12,6 +12,10 @@ public class ApiUtils {
         if (val.longValue() < 0) throw new IllegalArgumentException(message);
     }
 
+    public static void assertTrue(boolean val, String message){
+        if (!val) throw new IllegalArgumentException(message);
+    }
+
     private static boolean isNull(Object o){
         return o == null;
     }
