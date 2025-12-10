@@ -8,6 +8,7 @@ class StreamlineSpringBootStarterApplicationTests {
 
     @Test
     void contextLoads() {
+        System.out.println("A very rigorous test");
     }
 
 }

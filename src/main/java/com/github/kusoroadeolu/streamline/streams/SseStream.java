@@ -1,13 +1,14 @@
-package com.github.kusoroadeolu.streamline.channels;
+package com.github.kusoroadeolu.streamline.streams;
 
 import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.concurrent.CompletableFuture;
 
-public interface SseChannel {
+public interface SseStream {
 
-    static SseChannelBuilder builder(){
-        return new SseChannelImplBuilder();
+    static SseStreamBuilder builder(){
+        return new SseStreamImplBuilder();
     }
 
     CompletableFuture<Void> send(Object object);
@@ -17,4 +18,6 @@ public interface SseChannel {
     void complete();
 
     void completeWithError(Throwable ex);
+
+    SseEmitter getEmitter();
 }
