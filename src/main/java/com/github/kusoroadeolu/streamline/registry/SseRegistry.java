@@ -4,16 +4,19 @@ import com.github.kusoroadeolu.streamline.exceptions.SseRegistryFullException;
 import com.github.kusoroadeolu.streamline.exceptions.SseRegistryShutdownException;
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamCompletedException;
 import com.github.kusoroadeolu.streamline.streams.SseStream;
+import org.springframework.lang.NonNull;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
+import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertNotNull;
 import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertPositive;
 
-public final class SseRegistry<ID, E> {
+public class SseRegistry<ID, E> {
     private final ConcurrentHashMap<ID, SseStream> streamRegistry;
     private final ExecutorService registryExecutor;
     private final ArrayList<E> eventRegistry;
@@ -26,7 +29,12 @@ public final class SseRegistry<ID, E> {
     private final Consumer<Throwable> onStreamError;
     private volatile RegistryStatus status;
 
-     SseRegistry(SseRegistryBuilder<ID, E> builder) {
+    private static final String NULL_EVENT_MESSAGE = "Event cannot be null";
+    private static final String NULL_ID_MESSAGE = "Id cannot be null";
+    private static final String NULL_STREAM_MESSAGE = "Stream cannot be null";
+
+
+    SseRegistry(SseRegistryBuilderImpl<ID, E> builder) {
         this.streamRegistry = new ConcurrentHashMap<>();
         this.registryExecutor = Executors.newVirtualThreadPerTaskExecutor();
         this.eventRegistry = new ArrayList<>();
@@ -41,45 +49,58 @@ public final class SseRegistry<ID, E> {
 
      }
 
-     public SseRegistryBuilder<ID, E> builder(){
-         return new SseRegistryBuilder<>();
+     public static <ID, E> SseRegistryBuilder<ID, E> builder(){
+         return new SseRegistryBuilderImpl<>();
      }
 
+
+     /*  --------------------------- REGISTRY LIFECYCLE --------------------------------------- */
+
+
      public void createAndRegister(ID id){
+         assertNotNull(id, NULL_ID_MESSAGE);
+
          this.lifeCycleLock.lock();
          try{
-             if (this.status != RegistryStatus.ACTIVE) throw new SseRegistryShutdownException();
-             final var stream = this.createStream();
-             var absent = this.streamRegistry.putIfAbsent(id, stream);
+             if (this.isShutdown()) throw new SseRegistryShutdownException();
+             if (this.streamRegistry.size() >= this.maxStreams) throw new SseRegistryFullException();
+             final var newStream = this.createStream();
+             final var absent = this.streamRegistry.putIfAbsent(id, newStream);
              if(absent != null) return;
-             this.registryExecutor.execute(stream::complete); //Complete the stream but dont block
+             this.registryExecutor.execute(newStream::complete); //Complete the stream but dont block
          }finally {
              lifeCycleLock.unlock();
          }
      }
 
      public void register(ID id, SseStream stream){
+         assertNotNull(id, NULL_ID_MESSAGE);
+         assertNotNull(stream, NULL_STREAM_MESSAGE);
+
          this.lifeCycleLock.lock();
          try{
              if (this.isShutdown()) throw new SseRegistryShutdownException();
-             if (this.streamRegistry.size() > this.maxStreams) throw new SseRegistryFullException();
-             var absent = this.streamRegistry.put(id, stream); //Different semantics from create and register. Replaces the previous sse stream
-             if(absent != null) absent.complete(); //Complete the previous stream. Maybe dispatch this to a different thread to prevent blocking because of executor close op
+             if (this.size() >= this.maxStreams) throw new SseRegistryFullException();
+             final var absent = this.streamRegistry.put(id, stream); //Different semantics from create and register. Replaces the previous sse stream and completes it
+             if(absent != null) this.registryExecutor.execute(absent::complete); // dispatch this to a different thread to prevent blocking because of executor close op
          }finally {
              this.lifeCycleLock.unlock();
          }
      }
 
      public SseStream get(ID id){
+         assertNotNull(id, NULL_ID_MESSAGE);
          return this.streamRegistry.get(id); //Didn't lock this operation, locking adds a bit of overhead for minimal benefit. Only issue is the user could get a complete stream or no stream at all when the registry shuts down
      }
 
      public void remove(ID id){
+         assertNotNull(id, NULL_ID_MESSAGE);
+
          if (this.isShutdown()) return;
          this.lifeCycleLock.lock();
          try {
              if (this.isShutdown()) return;
-             var stream = this.streamRegistry.remove(id); //Same semantics as get()
+             var stream = this.streamRegistry.remove(id);
              if (stream == null) return;
              this.registryExecutor.execute(stream::complete);
          }finally {
@@ -87,28 +108,31 @@ public final class SseRegistry<ID, E> {
          }
      }
 
-
+     public int size(){
+         return this.streamRegistry.size();
+     }
 
      public void broadcast(E event){
-         this.lifeCycleLock.lock();
-         try {
-             this.streamRegistry.forEach((id, s) -> CompletableFuture.runAsync(() -> this.sendTo(id, event), this.registryExecutor));
-         }finally {
-             this.lifeCycleLock.unlock();
-         }
+         assertNotNull(event, NULL_EVENT_MESSAGE);
+         if (this.isShutdown()) throw new SseRegistryShutdownException(); //Just a simple check here, a race condition here doesn't matter since it doesn't corrupt the registry state
+         this.streamRegistry.forEach((id, s) -> CompletableFuture.runAsync(() -> this.sendTo(id, event), this.registryExecutor));
      }
 
      public boolean sendTo(ID id, E event){
-         this.lifeCycleLock.lock();
+         assertNotNull(id, NULL_ID_MESSAGE);
+         assertNotNull(event, NULL_EVENT_MESSAGE);
          try {
              if (this.isShutdown()) return false;
-             this.get(id).send(event); //This is non-blocking, overhead is minimal
+             final var stream = this.get(id);
+             if (stream != null) {
+                 stream.send(event);
+                 return true;
+             }
          }catch (SseStreamCompletedException | CompletionException ignored){
              return false;
-         }finally {
-             this.lifeCycleLock.unlock();
          }
-         return true;
+
+         return false;
      }
 
      public CompletableFuture<Void> shutdown(){
@@ -116,27 +140,26 @@ public final class SseRegistry<ID, E> {
          try {
              if(this.isShutdown()) return CompletableFuture.completedFuture(null);
              this.status = RegistryStatus.SHUTDOWN;
-             List<CompletableFuture<?>> futures = new ArrayList<>(this.streamRegistry.size());
-             this.streamRegistry.forEach((id, e) -> {
-                 var c = CompletableFuture.runAsync(() -> this.removeUnlock(id), this.registryExecutor);
-                 futures.add(c);
-             });
-
-             return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
-                     .thenRunAsync(this.registryExecutor::close, this.registryExecutor); //Return a completable future here so the user can deal with this
-
          }finally {
              this.lifeCycleLock.unlock();
          }
+
+         final var futures = new ArrayList<CompletableFuture<Void>>(this.streamRegistry.size());
+         this.streamRegistry.forEach((id, e) -> {
+             final var c = CompletableFuture.runAsync(() -> this.removeUnlock(id), this.registryExecutor);
+             futures.add(c);
+         });
+
+         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
      }
 
-     private boolean isShutdown(){
+     public boolean isShutdown(){
          return this.status == RegistryStatus.SHUTDOWN;
      }
 
     private void removeUnlock(ID id){
         if (this.isShutdown()) return;
-        var stream = this.streamRegistry.remove(id); //Same semantics as get()
+        final var stream = this.streamRegistry.remove(id); //Same semantics as get()
         if (stream == null) return;
         stream.complete(); // Didn't make this async to let the user know that this stream actually completed
     }
@@ -151,9 +174,18 @@ public final class SseRegistry<ID, E> {
      }
 
 
+    /*  --------------------------- REGISTRY REPLAY --------------------------------------- TODO */
+
+
+    //For tests
+     protected Collection<SseStream> getAllStreams(){
+         return this.streamRegistry.values();
+     }
+
+
 }
 
-class SseRegistryBuilder<ID, E>{
+class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     protected int maxEvents;
     protected int maxStreams;
     protected Runnable onComplete;
@@ -162,43 +194,44 @@ class SseRegistryBuilder<ID, E>{
     protected long timeout;
     private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";
 
-
-    public SseRegistryBuilder<ID, E> timeout(long timeout){
-        this.timeout = timeout;
-        return this;
-    }
-
+    @Override
     public SseRegistryBuilder<ID, E> onStreamTimeout(Runnable callback) {
         this.onTimeout = callback;
         return this;
     }
 
+    @Override
     public SseRegistryBuilder<ID, E> onStreamError(Consumer<Throwable> callback) {
         this.onError = callback;
         return this;
     }
 
+    @Override
     public SseRegistryBuilder<ID, E> onStreamComplete(Runnable callback) {
         this.onComplete = callback;
         return this;
     }
 
+    @Override
     public SseRegistryBuilder<ID, E> streamTimeout(long timeout) {
         assertPositive(timeout, TIMEOUT_NEGATIVE_MESSAGE);
         this.timeout = timeout;
         return this;
     }
 
+    @Override
     public SseRegistryBuilder<ID, E> maxEvents(int maxEvents) {
         this.maxEvents = maxEvents;
         return this;
     }
 
+    @Override
     public SseRegistryBuilder<ID, E> maxStreams(int maxStreams) {
         this.maxStreams = maxStreams;
         return this;
     }
 
+    @Override
     public SseRegistry<ID, E> build(){
         return new SseRegistry<>(this);
     }

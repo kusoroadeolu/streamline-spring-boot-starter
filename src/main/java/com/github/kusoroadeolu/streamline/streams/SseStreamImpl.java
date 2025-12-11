@@ -15,6 +15,7 @@ import java.util.function.Consumer;
 
 import static com.github.kusoroadeolu.streamline.streams.StreamStatus.ACTIVE;
 import static com.github.kusoroadeolu.streamline.streams.StreamStatus.COMPLETED;
+import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertNotNull;
 import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertPositive;
 
 public class SseStreamImpl implements SseStream {
@@ -139,6 +140,14 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
         assertPositive(timeout, TIMEOUT_NEGATIVE_MESSAGE);
         this.timeout = timeout;
         return this;
+    }
+
+    public SseStream fromEmitter(SseEmitter emitter){
+         assertNotNull(emitter, "Sse emitter cannot be null");
+         this.emitter = (ImmutableSseEmitter) emitter;
+         final SseStream stream = new SseStreamImpl(this);
+         this.configureCallback(stream);
+         return stream;
     }
 
 

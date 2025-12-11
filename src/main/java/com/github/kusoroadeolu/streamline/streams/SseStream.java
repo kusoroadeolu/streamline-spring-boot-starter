@@ -20,4 +20,6 @@ public interface SseStream {
     void completeWithError(Throwable ex);
 
     SseEmitter getEmitter();
+
+    boolean isCompleted();
 }

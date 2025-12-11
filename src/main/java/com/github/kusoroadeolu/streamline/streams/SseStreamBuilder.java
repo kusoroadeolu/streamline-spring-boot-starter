@@ -13,5 +13,7 @@ public interface SseStreamBuilder {
 
     SseStreamBuilder withTimeout(long timeout);
 
+    SseStream fromEmitter(SseEmitter emitter);
+
     SseStream build();
 }
