@@ -180,12 +180,12 @@ public class SseRegistry<ID, E> {
      }
 
 
-    //  --------------------------- REGISTRY REPLAY --------------------------------------- TODO
+    //  --------------------------- REGISTRY REPLAY ---------------------------------------
+    /* Same semantics as broadcast */
     public void registerEvent(E event){
         this.eventRegistry.add(event, this.eventEvictionPolicy);
     }
 
-    /* Same semantics as broadcast */
 
     public void replayAllTo(ID id){
         assertNotNull(id, NULL_ID_MESSAGE);
@@ -225,9 +225,10 @@ public class SseRegistry<ID, E> {
     }
 
     private void sendMultipleEventsTo(ID id, Collection<E> events){
+         assertNotNull(id, NULL_ID_MESSAGE);
+         if (events.isEmpty()) return;
          this.streamRegistry.get(id).sendAll(events);
     }
-
 
 
     //For tests
