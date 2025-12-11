@@ -2,7 +2,6 @@ package com.github.kusoroadeolu.streamline.streams;
 
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamCompletedException;
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamIOException;
-import com.github.kusoroadeolu.streamline.utils.ApiUtils;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -16,7 +15,6 @@ import java.util.function.Consumer;
 
 import static com.github.kusoroadeolu.streamline.streams.StreamStatus.ACTIVE;
 import static com.github.kusoroadeolu.streamline.streams.StreamStatus.COMPLETED;
-import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertNotNull;
 import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertPositive;
 
 public class SseStreamImpl implements SseStream {
@@ -26,7 +24,7 @@ public class SseStreamImpl implements SseStream {
     private final ReentrantLock statusLock;
     private volatile StreamStatus streamStatus;
 
-    SseStreamImpl(SseStreamImplBuilder sseChannelImplBuilder) {
+    SseStreamImpl(SseStreamBuilderImpl sseChannelImplBuilder) {
         this.emitter = sseChannelImplBuilder.emitter;
         this.executorService = sseChannelImplBuilder.executor;
         this.statusLock = sseChannelImplBuilder.statusLock;
@@ -34,7 +32,7 @@ public class SseStreamImpl implements SseStream {
     }
 
     public static SseStreamBuilder builder(){
-        return new SseStreamImplBuilder();
+        return new SseStreamBuilderImpl();
     }
 
     public CompletableFuture<Void> send(Object object){
@@ -56,6 +54,8 @@ public class SseStreamImpl implements SseStream {
             this.statusLock.unlock();
         }
     }
+
+
 
     public void complete(){
         this.markCompleted();
@@ -88,7 +88,7 @@ public class SseStreamImpl implements SseStream {
 
 }
 
-class SseStreamImplBuilder implements SseStreamBuilder {
+class SseStreamBuilderImpl implements SseStreamBuilder {
     protected ImmutableSseEmitter emitter;
     protected final ExecutorService executor;
     protected final ReentrantLock statusLock;
@@ -98,23 +98,22 @@ class SseStreamImplBuilder implements SseStreamBuilder {
     private Runnable onTimeoutCallback;
     private Consumer<Throwable> onErrorCallback;
 
-    private final static String SSE_NULL_MESSAGE = "Sse emitter cannot be null";
     private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";
     private final static long DEFAULT_TIMEOUT = 60_000L;
 
 
-     SseStreamImplBuilder(ExecutorService executor){
+     SseStreamBuilderImpl(ExecutorService executor){
         this.executor = executor;
         this.timeout = DEFAULT_TIMEOUT;
         this.statusLock = new ReentrantLock();
     }
 
-    SseStreamImplBuilder(ImmutableSseEmitter emitter){
+    SseStreamBuilderImpl(ImmutableSseEmitter emitter){
         this(Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()));
         this.emitter =  emitter;
     }
 
-     SseStreamImplBuilder(){
+     SseStreamBuilderImpl(){
         this(Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()));
     }
 
@@ -130,12 +129,6 @@ class SseStreamImplBuilder implements SseStreamBuilder {
 
     public SseStreamBuilder onTimeout(Runnable callback){
         this.onTimeoutCallback = callback;
-        return this;
-    }
-
-    public SseStreamBuilder fromEmitter(ImmutableSseEmitter emitter){
-        assertNotNull(emitter, SSE_NULL_MESSAGE);
-        this.emitter = emitter;
         return this;
     }
 

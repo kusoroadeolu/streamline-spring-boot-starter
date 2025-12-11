@@ -43,7 +43,7 @@ SSE Registry<ID, UserEvent>
 Thread-safe storage and management for channels:
 
 ConcurrentHashMap<String, SseChannel> for O(1) lookups
-RingBuffer/ArrayList<UserEvent> events;
+ConcurrentLinkedDeque<UserEvent> events;
 Event history buffer (configurable size)
 Broadcasting with virtual threads (one slow client doesn't block others)
 Event replay for reconnecting clients (via Last-Event-ID)
@@ -206,7 +206,6 @@ Architecture Decisions
 
 Why Virtual Threads?
 
-Handle thousands of concurrent SSE connections without thread pool exhaustion
 Blocking I/O becomes viable at scale
 Simpler than reactive programming
 

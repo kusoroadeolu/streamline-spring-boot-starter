@@ -166,7 +166,7 @@ Registry Operations
 SseChannel channel = registry.createAndRegister("user-123");
 
 // Manual registration  
-SseChannel channel = new SseChannel(config);
+SseChannel channel = new SseChannel();
 registry.register("user-123", channel);
 
 

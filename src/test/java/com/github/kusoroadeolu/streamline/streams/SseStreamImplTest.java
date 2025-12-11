@@ -6,7 +6,6 @@ import org.apache.tomcat.util.threads.VirtualThreadExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,11 +18,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SseStreamImplTest {
 
-    private SseStreamImplBuilder sseStreamImplBuilder;
+    private SseStreamBuilderImpl sseStreamBuilderImpl;
     private FakeEmitter emitter;
     private SseStream stream;
 
-    private SseStreamImplBuilder errorSseStreamImplBuilder;
+    private SseStreamBuilderImpl errorSseStreamBuilderImpl;
     private ErrorEmitter errorEmitter;
     private SseStream errorStream;
 
@@ -31,12 +30,12 @@ class SseStreamImplTest {
     @BeforeEach
     public void onSetup(){
         emitter = new FakeEmitter();
-        sseStreamImplBuilder = new SseStreamImplBuilder(emitter);
-        stream = sseStreamImplBuilder.build();
+        sseStreamBuilderImpl = new SseStreamBuilderImpl(emitter);
+        stream = sseStreamBuilderImpl.build();
 
         errorEmitter = new ErrorEmitter();
-        errorSseStreamImplBuilder = new SseStreamImplBuilder(errorEmitter);
-        errorStream = errorSseStreamImplBuilder.build();
+        errorSseStreamBuilderImpl = new SseStreamBuilderImpl(errorEmitter);
+        errorStream = errorSseStreamBuilderImpl.build();
     }
 
     @Test
@@ -46,7 +45,7 @@ class SseStreamImplTest {
         String content = "content";
         TestEvent testEvent = new TestEvent(id, name, content);
 
-        SseStream stream = sseStreamImplBuilder.build();
+        SseStream stream = sseStreamBuilderImpl.build();
         stream.send(testEvent).join();
 
         assertFalse(emitter.sent.isEmpty());
@@ -85,7 +84,7 @@ class SseStreamImplTest {
     @Test
     void shouldRunAsync_onSend(){
         SlowEmitter sm = new SlowEmitter();
-        SseStream slowStream = new SseStreamImplBuilder(sm).build();
+        SseStream slowStream = new SseStreamBuilderImpl(sm).build();
 
         int id = 1;
         String name = "event";
@@ -171,7 +170,7 @@ class SseStreamImplTest {
     @Test
     void shouldThrowNothing_onSlowSend(){
         SlowEmitter sm = new SlowEmitter();
-        SseStream slowStream = new SseStreamImplBuilder(sm).build();
+        SseStream slowStream = new SseStreamBuilderImpl(sm).build();
 
         int id = 1;
         String name = "event";

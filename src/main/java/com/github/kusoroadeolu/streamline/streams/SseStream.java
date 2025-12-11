@@ -8,7 +8,7 @@ import java.util.concurrent.CompletableFuture;
 public interface SseStream {
 
     static SseStreamBuilder builder(){
-        return new SseStreamImplBuilder();
+        return new SseStreamBuilderImpl();
     }
 
     CompletableFuture<Void> send(Object object);
