@@ -46,7 +46,7 @@ Thread-safe storage and management for channels:
 
 
 ConcurrentHashMap<String, SseChannel> for O(1) lookups
-RingBuffer/ArrayList<UserEvent> events;
+ArrayList<UserEvent> events;
 Event history buffer (configurable size)
 Broadcasting with virtual threads (one slow client doesn't block others)
 Event replay for reconnecting clients (via Last-Event-ID)

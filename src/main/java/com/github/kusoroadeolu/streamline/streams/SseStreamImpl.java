@@ -6,6 +6,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
@@ -58,6 +59,14 @@ public class SseStreamImpl implements SseStream {
     }
 
 
+    public void sendAll(Collection<?> object){
+        object.forEach(o -> this.send(o, (MediaType) null));
+    }
+
+
+    public void sendAll(Collection<?> object, MediaType mediaType){
+        object.forEach(o -> this.send(o, mediaType));
+    }
 
     public void complete(){
         if(this.isCompleted()) return;
