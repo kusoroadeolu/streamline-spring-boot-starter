@@ -1,21 +1,21 @@
 package com.github.kusoroadeolu.streamline.registry;
 
+import com.github.kusoroadeolu.streamline.exceptions.SseRegistryFullException;
+import com.github.kusoroadeolu.streamline.exceptions.SseRegistryShutdownException;
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamCompletedException;
 import com.github.kusoroadeolu.streamline.streams.SseStream;
-import org.springframework.util.StreamUtils;
 
 import java.util.ArrayList;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.List;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
-import java.util.stream.StreamSupport;
 
 import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertPositive;
 
 public final class SseRegistry<ID, E> {
     private final ConcurrentHashMap<ID, SseStream> streamRegistry;
+    private final ExecutorService registryExecutor;
     private final ArrayList<E> eventRegistry;
     private final ReentrantLock lifeCycleLock;
     private final long timeout;
@@ -24,10 +24,11 @@ public final class SseRegistry<ID, E> {
     private final Runnable onStreamComplete;
     private final Runnable onStreamTimeout;
     private final Consumer<Throwable> onStreamError;
-    private RegistryStatus status;
+    private volatile RegistryStatus status;
 
      SseRegistry(SseRegistryBuilder<ID, E> builder) {
         this.streamRegistry = new ConcurrentHashMap<>();
+        this.registryExecutor = Executors.newVirtualThreadPerTaskExecutor();
         this.eventRegistry = new ArrayList<>();
         this.lifeCycleLock = new ReentrantLock();
         this.timeout = builder.timeout;
@@ -37,6 +38,7 @@ public final class SseRegistry<ID, E> {
         this.onStreamTimeout = builder.onTimeout;
         this.onStreamError = builder.onError;
         this.status = RegistryStatus.ACTIVE;
+
      }
 
      public SseRegistryBuilder<ID, E> builder(){
@@ -46,12 +48,11 @@ public final class SseRegistry<ID, E> {
      public void createAndRegister(ID id){
          this.lifeCycleLock.lock();
          try{
-             if (this.status != RegistryStatus.ACTIVE) return; //TODO throw here
+             if (this.status != RegistryStatus.ACTIVE) throw new SseRegistryShutdownException();
              final var stream = this.createStream();
              var absent = this.streamRegistry.putIfAbsent(id, stream);
-             if(absent != null) //TODO log here
-                  return;
-             stream.complete(); //Complete the stream we just created
+             if(absent != null) return;
+             this.registryExecutor.execute(stream::complete); //Complete the stream but dont block
          }finally {
              lifeCycleLock.unlock();
          }
@@ -60,12 +61,12 @@ public final class SseRegistry<ID, E> {
      public void register(ID id, SseStream stream){
          this.lifeCycleLock.lock();
          try{
-             if (this.status != RegistryStatus.ACTIVE) return; //TODO throw here
-             if (this.streamRegistry.size() > maxStreams) return; //TODO throw here as well
+             if (this.isShutdown()) throw new SseRegistryShutdownException();
+             if (this.streamRegistry.size() > this.maxStreams) throw new SseRegistryFullException();
              var absent = this.streamRegistry.put(id, stream); //Different semantics from create and register. Replaces the previous sse stream
              if(absent != null) absent.complete(); //Complete the previous stream. Maybe dispatch this to a different thread to prevent blocking because of executor close op
          }finally {
-             lifeCycleLock.unlock();
+             this.lifeCycleLock.unlock();
          }
      }
 
@@ -73,16 +74,24 @@ public final class SseRegistry<ID, E> {
          return this.streamRegistry.get(id); //Didn't lock this operation, locking adds a bit of overhead for minimal benefit. Only issue is the user could get a complete stream or no stream at all when the registry shuts down
      }
 
-     public SseStream remove(ID id){
-         var stream = this.streamRegistry.remove(id); //Same semantics as get()
-         stream.complete(); //Complete the stream, maybe I sh
-         return stream;
+     public void remove(ID id){
+         this.lifeCycleLock.lock(); //This lock might not be needed but to prevent race conditions when broadcasting or shutting down
+         SseStream stream;
+         try {
+             if (this.isShutdown()) return;
+             stream = this.streamRegistry.remove(id); //Same semantics as get()
+         }finally {
+             this.lifeCycleLock.unlock();
+         }
+
+         stream.complete(); // Didn't make this async to let the user know that this stream actually completed
      }
 
      public void broadcast(E event){
-         this.lifeCycleLock.lock(); //Reentrant
+         this.lifeCycleLock.lock();
          try {
-             this.streamRegistry.forEach((id, s) -> this.sendTo(id, event));
+             this.streamRegistry.forEach((id, s) -> CompletableFuture.runAsync(() -> this.sendTo(id, event),
+                     this.registryExecutor));
          }finally {
              this.lifeCycleLock.unlock();
          }
@@ -91,6 +100,7 @@ public final class SseRegistry<ID, E> {
      public boolean sendTo(ID id, E event){
          this.lifeCycleLock.lock();
          try {
+             if (this.isShutdown()) return false;
              this.get(id).send(event); //This is non-blocking, overhead is minimal
          }catch (SseStreamCompletedException | CompletionException ignored){
              return false;
@@ -100,15 +110,28 @@ public final class SseRegistry<ID, E> {
          return true;
      }
 
-     public void shutdown(){
+     public CompletableFuture<Void> shutdown(){
          this.lifeCycleLock.lock();
          try {
-             if(this.status == RegistryStatus.SHUTDOWN) return;
+             if(this.isShutdown()) return new CompletableFuture<>(); //Return an incomplete future
              this.status = RegistryStatus.SHUTDOWN;
-             this.streamRegistry.forEach((id, e) -> this.remove(id)); //This might cause long waits, might need to rethink this probs
+
+             List<CompletableFuture<?>> futures = new ArrayList<>(this.streamRegistry.size() + 1);
+             this.streamRegistry.forEach((id, e) -> {
+                 var c = CompletableFuture.runAsync(() -> this.remove(id), this.registryExecutor);
+                 futures.add(c);
+             });
+
+             return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                     .thenRunAsync(this.registryExecutor::close, this.registryExecutor); //Return a completable future here so the user can deal with this
+
          }finally {
              this.lifeCycleLock.unlock();
          }
+     }
+
+     private boolean isShutdown(){
+         return this.status == RegistryStatus.SHUTDOWN;
      }
 
 

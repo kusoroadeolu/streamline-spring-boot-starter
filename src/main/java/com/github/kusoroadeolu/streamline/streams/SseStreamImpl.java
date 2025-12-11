@@ -40,6 +40,7 @@ public class SseStreamImpl implements SseStream {
     }
 
     public CompletableFuture<Void> send(Object object, MediaType mediaType){
+        if(this.isCompleted()) throw new SseStreamCompletedException(); //Check first, worst case two threads still try to acquire the lock, best case no lock is acquired
         this.statusLock.lock();
         try {
             if(this.isCompleted()) throw new SseStreamCompletedException();
@@ -58,12 +59,14 @@ public class SseStreamImpl implements SseStream {
 
 
     public void complete(){
+        if(this.isCompleted()) return;
         this.markCompleted();
         this.executorService.close();
         this.emitter.complete();
     }
 
     public void completeWithError(Throwable ex){
+        if(this.isCompleted()) return;
         this.markCompleted();
         this.executorService.close();
         this.emitter.completeWithError(ex);
