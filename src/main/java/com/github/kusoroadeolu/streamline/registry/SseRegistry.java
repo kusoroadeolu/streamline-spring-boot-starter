@@ -75,23 +75,24 @@ public final class SseRegistry<ID, E> {
      }
 
      public void remove(ID id){
-         this.lifeCycleLock.lock(); //This lock might not be needed but to prevent race conditions when broadcasting or shutting down
-         SseStream stream;
+         if (this.isShutdown()) return;
+         this.lifeCycleLock.lock();
          try {
              if (this.isShutdown()) return;
-             stream = this.streamRegistry.remove(id); //Same semantics as get()
+             var stream = this.streamRegistry.remove(id); //Same semantics as get()
+             if (stream == null) return;
+             this.registryExecutor.execute(stream::complete);
          }finally {
              this.lifeCycleLock.unlock();
          }
-
-         stream.complete(); // Didn't make this async to let the user know that this stream actually completed
      }
+
+
 
      public void broadcast(E event){
          this.lifeCycleLock.lock();
          try {
-             this.streamRegistry.forEach((id, s) -> CompletableFuture.runAsync(() -> this.sendTo(id, event),
-                     this.registryExecutor));
+             this.streamRegistry.forEach((id, s) -> CompletableFuture.runAsync(() -> this.sendTo(id, event), this.registryExecutor));
          }finally {
              this.lifeCycleLock.unlock();
          }
@@ -113,12 +114,11 @@ public final class SseRegistry<ID, E> {
      public CompletableFuture<Void> shutdown(){
          this.lifeCycleLock.lock();
          try {
-             if(this.isShutdown()) return new CompletableFuture<>(); //Return an incomplete future
+             if(this.isShutdown()) return CompletableFuture.completedFuture(null);
              this.status = RegistryStatus.SHUTDOWN;
-
-             List<CompletableFuture<?>> futures = new ArrayList<>(this.streamRegistry.size() + 1);
+             List<CompletableFuture<?>> futures = new ArrayList<>(this.streamRegistry.size());
              this.streamRegistry.forEach((id, e) -> {
-                 var c = CompletableFuture.runAsync(() -> this.remove(id), this.registryExecutor);
+                 var c = CompletableFuture.runAsync(() -> this.removeUnlock(id), this.registryExecutor);
                  futures.add(c);
              });
 
@@ -134,6 +134,12 @@ public final class SseRegistry<ID, E> {
          return this.status == RegistryStatus.SHUTDOWN;
      }
 
+    private void removeUnlock(ID id){
+        if (this.isShutdown()) return;
+        var stream = this.streamRegistry.remove(id); //Same semantics as get()
+        if (stream == null) return;
+        stream.complete(); // Didn't make this async to let the user know that this stream actually completed
+    }
 
      private SseStream createStream(){
          return SseStream.builder()
