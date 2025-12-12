@@ -50,7 +50,7 @@ public class SseStreamImpl implements SseStream {
             return CompletableFuture.runAsync(() -> {
                         try {
                             this.emitter.send(object, mediaType);
-                        } catch (IOException e) {
+                        } catch (IOException | RejectedExecutionException e) {
                             throw new CompletionException(new SseStreamIOException(e));
                         }
                     }, this.executorService);

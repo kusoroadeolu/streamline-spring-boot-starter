@@ -24,6 +24,8 @@ public class SseRegistry<ID, E> {
     private final long timeout;
     private final int maxEvents;
     private final int maxStreams;
+    private final int maxQueuedEventsPerStream;
+    private final long threadKeepAliveTime;
     private final Runnable onStreamComplete;
     private final Runnable onStreamTimeout;
     private final Consumer<Throwable> onStreamError;
@@ -44,6 +46,8 @@ public class SseRegistry<ID, E> {
 
         this.eventEvictionPolicy = builder.eventEvictionPolicy;
         this.timeout = builder.timeout;
+        this.maxQueuedEventsPerStream = builder.maxQueuedEventsPerStream;
+        this.threadKeepAliveTime = builder.threadKeepAliveTime;
         this.maxEvents = builder.maxEvents;
         this.maxStreams = builder.maxStreams;
         this.onStreamComplete = builder.onComplete;
@@ -120,6 +124,8 @@ public class SseRegistry<ID, E> {
          return this.streamRegistry.size();
      }
 
+
+     //Broadcasts of events during a shutdown that haven't been submitted yet will simply fail and throw a completion exception
      public CompletableFuture<Void> broadcast(E event){
          assertNotNull(event, NULL_EVENT_MESSAGE);
          if (this.isShutdown()) throw new SseRegistryShutdownException(); //Just a simple check here, a race condition here is not devastating since it doesn't corrupt the registry state
@@ -185,6 +191,8 @@ public class SseRegistry<ID, E> {
                  .onCompletion(this.onStreamComplete)
                  .onError(this.onStreamError)
                  .onTimeout(this.onStreamTimeout)
+                 .maxQueuedEvents(this.maxQueuedEventsPerStream)
+                 .threadKeepAliveTime(this.threadKeepAliveTime)
                  .build();
      }
 
@@ -209,6 +217,8 @@ public class SseRegistry<ID, E> {
 final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     int maxEvents;
     int maxStreams;
+    int maxQueuedEventsPerStream;
+    long threadKeepAliveTime;
     Runnable onComplete;
     Runnable onTimeout;
     Consumer<Throwable> onError;
@@ -216,6 +226,8 @@ final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     EventEvictionPolicy eventEvictionPolicy;
     Predicate<E> eventPredicate;
     private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";
+    private final static String KEEP_ALIVE_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";
+    private final static String MAX_QUEUED_EVENTS_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";
 
     @Override
     public SseRegistryBuilder<ID, E> onStreamTimeout(Runnable callback) {
@@ -244,6 +256,21 @@ final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
         this.onComplete = callback;
         return this;
     }
+
+    @Override
+    public SseRegistryBuilder<ID, E> streamThreadKeepAliveTime(long timeInSeconds){
+        assertPositive(timeInSeconds, KEEP_ALIVE_NEGATIVE_MESSAGE);
+        this.threadKeepAliveTime = timeInSeconds;
+        return this;
+    }
+
+    @Override
+    public SseRegistryBuilder<ID, E> maxQueuedEventsPerStream(int maxQueuedEvents){
+        assertPositive(maxQueuedEvents, MAX_QUEUED_EVENTS_NEGATIVE_MESSAGE);
+        this.maxQueuedEventsPerStream = maxQueuedEvents;
+        return this;
+    }
+
 
     @Override
     public SseRegistryBuilder<ID, E> streamTimeout(long timeout) {

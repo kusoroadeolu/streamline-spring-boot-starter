@@ -14,6 +14,10 @@ public interface SseRegistryBuilder<ID, E> {
 
     SseRegistryBuilder<ID, E> onStreamComplete(Runnable callback);
 
+    SseRegistryBuilder<ID, E> streamThreadKeepAliveTime(long timeInSeconds);
+
+    SseRegistryBuilder<ID, E> maxQueuedEventsPerStream(int maxQueuedEvents);
+
     SseRegistryBuilder<ID, E> streamTimeout(long timeout);
 
     SseRegistryBuilder<ID, E> maxEvents(int maxEvents);
