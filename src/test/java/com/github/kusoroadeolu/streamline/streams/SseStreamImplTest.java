@@ -45,7 +45,6 @@ class SseStreamImplTest {
         String content = "content";
         TestEvent testEvent = new TestEvent(id, name, content);
 
-        SseStream stream = sseStreamBuilderImpl.build();
         stream.send(testEvent).join();
 
         assertFalse(emitter.sent.isEmpty());
@@ -82,7 +81,7 @@ class SseStreamImplTest {
     }
 
     @Test
-    void shouldRunAsync_onSend(){
+    void shouldRunAsync_onSend() throws InterruptedException {
         SlowEmitter sm = new SlowEmitter();
         SseStream slowStream = new SseStreamBuilderImpl(sm).build();
 
@@ -91,6 +90,7 @@ class SseStreamImplTest {
         String content = "content";
         TestEvent testEvent = new TestEvent(id, name, content);
         CompletableFuture<Void> v = slowStream.send(testEvent);
+        Thread.sleep(10); //Give the
 
         assertFalse(v.isDone());
         assertTrue(sm.senderThread.isVirtual());

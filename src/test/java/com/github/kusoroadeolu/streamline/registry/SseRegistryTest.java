@@ -4,13 +4,11 @@ import com.github.kusoroadeolu.streamline.exceptions.SseRegistryFullException;
 import com.github.kusoroadeolu.streamline.exceptions.SseRegistryShutdownException;
 import com.github.kusoroadeolu.streamline.streams.ImmutableSseEmitter;
 import com.github.kusoroadeolu.streamline.streams.SseStream;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
 import java.io.IOException;
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -20,16 +18,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SseRegistryTest {
 
-    private FakeEmitter emitter;
-
-    private ErrorEmitter errorEmitter;
     private SseRegistry<Object, TestEvent> registry;
     private ExecutorService testExec;
 
     @BeforeEach
     public void onSetup(){
-        emitter = new FakeEmitter();
-        errorEmitter = new ErrorEmitter();
         this.registry = createRegistry(5);
         this.testExec = Executors.newVirtualThreadPerTaskExecutor();
     }
@@ -38,6 +31,7 @@ class SseRegistryTest {
     void shouldCreateAndRegisterSseStream() {
        String id = "id";
        this.registry.createAndRegister(id);
+
        assertNotNull(this.registry.get(id));
     }
 

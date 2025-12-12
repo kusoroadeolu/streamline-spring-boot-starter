@@ -3,13 +3,13 @@ package com.github.kusoroadeolu.streamline.registry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
 
-//Custom structure to prevent pinning of vthreads
+//Custom structure to prevent pinning of vthreads with synchronized blocks
 final class EventHistory<E> {
     private final ArrayList<E> events;
     private final ReentrantLock lock;
     private final int maxSize;
-    private final static int ZERO = 0;
 
     public EventHistory(int maxSize) {
         this.maxSize = maxSize;
@@ -17,15 +17,17 @@ final class EventHistory<E> {
         this.lock = new ReentrantLock();
     }
 
-    public void add(E event, EventEvictionPolicy policy) {
+    public void add(E event, EventEvictionPolicy policy, Predicate<E> eventPredicate) {
         this.lock.lock();
         try {
-            this.events.add(event);
-            if (this.events.size() > this.maxSize) {
+            if (eventPredicate != null && eventPredicate.test(event)){
+              this.events.add(event);
+                if (this.events.size() < this.maxSize) return;
                 switch (policy){
                     case FIFO -> this.events.removeFirst();
                     case LIFO -> this.events.removeLast();
                 }
+
             }
         } finally {
             lock.unlock();
@@ -41,20 +43,4 @@ final class EventHistory<E> {
         }
     }
 
-    public List<E> getAllAfter(int from){
-        return this.getFrom(from, this.events.size());
-    }
-
-    public List<E> getBetween(int from, int to){
-        return this.getFrom(from, to);
-    }
-
-    private List<E> getFrom(int f, int l) {
-        lock.lock();
-        try {
-            return this.events.subList(f, l);
-        } finally {
-            lock.unlock();
-        }
-    }
 }

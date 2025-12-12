@@ -1,9 +1,14 @@
 package com.github.kusoroadeolu.streamline.registry;
 
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 public interface SseRegistryBuilder<ID, E> {
     SseRegistryBuilder<ID, E> onStreamTimeout(Runnable callback);
+
+    SseRegistryBuilderImpl<ID, E> eventEvictionPolicy(EventEvictionPolicy policy);
+
+    SseRegistryBuilderImpl<ID, E> allowEvents(Predicate<E> eventPredicate);
 
     SseRegistryBuilder<ID, E> onStreamError(Consumer<Throwable> callback);
 

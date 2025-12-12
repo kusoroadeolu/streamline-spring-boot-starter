@@ -16,9 +16,6 @@ public interface SseStream {
 
     CompletableFuture<Void> send(Object object, MediaType mediaType);
 
-    void sendAll(Collection<?> object);
-
-    void sendAll(Collection<?> object, MediaType mediaType);
 
     void complete();
 

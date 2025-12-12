@@ -7,10 +7,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
@@ -56,16 +53,6 @@ public class SseStreamImpl implements SseStream {
         }finally{
             this.statusLock.unlock();
         }
-    }
-
-
-    public void sendAll(Collection<?> object){
-        object.forEach(o -> this.send(o, (MediaType) null));
-    }
-
-
-    public void sendAll(Collection<?> object, MediaType mediaType){
-        object.forEach(o -> this.send(o, mediaType));
     }
 
     public void complete(){
@@ -115,19 +102,19 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
     private final static long DEFAULT_TIMEOUT = 60_000L;
 
 
-     SseStreamBuilderImpl(ExecutorService executor){
+     SseStreamBuilderImpl(ThreadPoolExecutor executor){
         this.executor = executor;
         this.timeout = DEFAULT_TIMEOUT;
         this.statusLock = new ReentrantLock();
-    }
+     }
 
     SseStreamBuilderImpl(ImmutableSseEmitter emitter){
-        this(Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()));
+        this();
         this.emitter =  emitter;
     }
 
      SseStreamBuilderImpl(){
-        this(Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()));
+        this(new ThreadPoolExecutor(0, 1, 60L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(10)));
     }
 
     public SseStreamBuilder onCompletion(Runnable callback){
@@ -154,7 +141,7 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
     public SseStream fromEmitter(SseEmitter emitter){
          assertNotNull(emitter, "Sse emitter cannot be null");
          this.emitter = (ImmutableSseEmitter) emitter;
-         final SseStream stream = new SseStreamImpl(this);
+         final var stream = new SseStreamImpl(this);
          this.configureCallback(stream);
          return stream;
     }
@@ -162,11 +149,10 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
 
     public SseStream build(){
         if (this.emitter == null) this.emitter = new ImmutableSseEmitter(this.timeout);
-        final SseStream stream = new SseStreamImpl(this);
+        final var stream = new SseStreamImpl(this);
         this.configureCallback(stream);
         return stream;
     }
-
 
 
     private void configureCallback(SseStream stream){
