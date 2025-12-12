@@ -51,7 +51,7 @@ public final class EventReplayer<ID, E>{
      private List<E> eventsToSend(){
         if (this.all) return this.events;
         else if (this.matching != null) return this.getMatchingEvents();
-        else if (this.from != 0 && this.to == 0) return this.events.subList(from, this.events.size());
+        else if (this.from != -1 && this.to == -1) return this.events.subList(from, this.events.size());
         else return this.events.subList(from, to);
     }
 
@@ -61,8 +61,8 @@ public final class EventReplayer<ID, E>{
 }
 
 final class EventReplayBuilder<ID, E> {
-    int from;
-    int to;
+    int from = -1;
+    int to = -1;
     boolean all;
     Predicate<E> matching;
     final ExecutorService executorService;
