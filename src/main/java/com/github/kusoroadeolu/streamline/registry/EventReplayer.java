@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Predicate;
 
-import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertNotNull;
+import static com.github.kusoroadeolu.streamline.utils.ApiUtils.*;
 
 
 public final class EventReplayer<ID, E>{
@@ -68,6 +68,10 @@ final class EventReplayBuilder<ID, E> {
     final ExecutorService executorService;
     final List<E> events;
     final Map<ID, SseStream> streams;
+    private final static String PREDICATE_NULL_MESSAGE = "Predicate cannot be null";
+    private final static String FROM_INVALID_MESSAGE = "From index must pertain to list bounds";
+    private final static String TO_INVALID_MESSAGE = "To index must pertain to list bounds";
+    private final static String GREATER_THAN_MESSAGE = "To index must be greater than or equal to from index";
 
     public EventReplayBuilder(ExecutorService executorService, List<E> events, Map<ID, SseStream> streams) {
         this.executorService = executorService;
@@ -76,22 +80,26 @@ final class EventReplayBuilder<ID, E> {
     }
 
 
-
     public EventReplayer<ID, E> from(int from) {
+        assertBetween(from, 0, this.events.size() - 1, FROM_INVALID_MESSAGE);
         this.from = from;
         return new EventReplayer<>(this);
     }
 
     public EventReplayer<ID, E> between(int from, int to) {
+        assertTrue(to >= from, GREATER_THAN_MESSAGE);
+        assertBetween(from, 0, this.events.size() - 1, FROM_INVALID_MESSAGE);
+        assertBetween(to, 0, this.events.size() - 1, TO_INVALID_MESSAGE);
         this.to = to;
         this.from = from;
         return new EventReplayer<>(this);    }
 
-    public EventReplayer<ID, E> all(boolean all) {
-        this.all = all;
+    public EventReplayer<ID, E> all() {
+        this.all = true;
         return new EventReplayer<>(this);    }
 
     public EventReplayer<ID, E> matching(Predicate<E> matching) {
+        assertNotNull(matching, PREDICATE_NULL_MESSAGE);
         this.matching = matching;
         return new EventReplayer<>(this);
     }

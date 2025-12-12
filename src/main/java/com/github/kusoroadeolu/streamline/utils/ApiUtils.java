@@ -12,6 +12,12 @@ public class ApiUtils {
         if (val.longValue() < 0) throw new IllegalArgumentException(message);
     }
 
+
+    public static void assertBetween(Number val, int i, int l ,String message){
+        final var longVal = val.longValue();
+        if (longVal < i || longVal > l) throw new IllegalArgumentException(message);
+    }
+
     public static void assertTrue(boolean val, String message){
         if (!val) throw new IllegalArgumentException(message);
     }
