@@ -13,6 +13,10 @@ public interface SseStreamBuilder {
 
     SseStreamBuilder withTimeout(long timeout);
 
+    SseStreamBuilder threadKeepAliveTime(long timeInSeconds);
+
+    SseStreamBuilder maxQueuedEvents(int max);
+
     SseStream fromEmitter(SseEmitter emitter);
 
     SseStream build();

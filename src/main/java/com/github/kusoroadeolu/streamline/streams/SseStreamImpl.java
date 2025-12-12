@@ -6,7 +6,6 @@ import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -25,9 +24,14 @@ public class SseStreamImpl implements SseStream {
 
     SseStreamImpl(SseStreamBuilderImpl sseChannelImplBuilder) {
         this.emitter = sseChannelImplBuilder.emitter;
-        this.executorService = sseChannelImplBuilder.executor;
-        this.statusLock = sseChannelImplBuilder.statusLock;
+        this.statusLock = new ReentrantLock();
         this.streamStatus = ACTIVE;
+        this.executorService =
+                new ThreadPoolExecutor(0, 1,
+                        sseChannelImplBuilder.keepAliveTime,
+                        TimeUnit.SECONDS, new ArrayBlockingQueue<>(sseChannelImplBuilder.maxQueuedEvents),
+                        Thread.ofVirtual().factory());
+
     }
 
     public static SseStreamBuilder builder(){
@@ -90,22 +94,23 @@ public class SseStreamImpl implements SseStream {
 
 class SseStreamBuilderImpl implements SseStreamBuilder {
     protected ImmutableSseEmitter emitter;
-    protected final ExecutorService executor;
-    protected final ReentrantLock statusLock;
-
+    protected long keepAliveTime; //In seconds
+    protected int maxQueuedEvents;
     private long timeout;
     private Runnable onCompletionCallback;
     private Runnable onTimeoutCallback;
     private Consumer<Throwable> onErrorCallback;
 
     private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";
+    private final static String KEEP_ALIVE_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";
+    private final static String MAX_QUEUED_EVENTS_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";
     private final static long DEFAULT_TIMEOUT = 60_000L;
 
 
-     SseStreamBuilderImpl(ThreadPoolExecutor executor){
-        this.executor = executor;
+     SseStreamBuilderImpl(){
         this.timeout = DEFAULT_TIMEOUT;
-        this.statusLock = new ReentrantLock();
+        this.keepAliveTime = 60;
+        this.maxQueuedEvents = 100;
      }
 
     SseStreamBuilderImpl(ImmutableSseEmitter emitter){
@@ -113,9 +118,7 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
         this.emitter =  emitter;
     }
 
-     SseStreamBuilderImpl(){
-        this(new ThreadPoolExecutor(0, 1, 60L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(10)));
-    }
+
 
     public SseStreamBuilder onCompletion(Runnable callback){
         this.onCompletionCallback = callback;
@@ -135,6 +138,19 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
     public SseStreamBuilder withTimeout(long timeout){
         assertPositive(timeout, TIMEOUT_NEGATIVE_MESSAGE);
         this.timeout = timeout;
+        return this;
+    }
+
+
+    public SseStreamBuilder threadKeepAliveTime(long timeInSeconds){
+         assertPositive(timeInSeconds, KEEP_ALIVE_NEGATIVE_MESSAGE);
+        this.keepAliveTime = timeInSeconds;
+        return this;
+    }
+
+    public SseStreamBuilder maxQueuedEvents(int max){
+        assertPositive(max, MAX_QUEUED_EVENTS_NEGATIVE_MESSAGE);
+        this.maxQueuedEvents = max;
         return this;
     }
 
