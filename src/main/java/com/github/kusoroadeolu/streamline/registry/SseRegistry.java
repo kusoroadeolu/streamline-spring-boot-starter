@@ -13,8 +13,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertNotNull;
-import static com.github.kusoroadeolu.streamline.utils.ApiUtils.assertPositive;
+import static com.github.kusoroadeolu.streamline.utils.ApiUtils.*;
 
 public class SseRegistry<ID, E> {
     private final Map<ID, SseStream> streamRegistry;
@@ -35,6 +34,8 @@ public class SseRegistry<ID, E> {
     private static final String NULL_EVENT_MESSAGE = "Event cannot be null";
     private static final String NULL_ID_MESSAGE = "Id cannot be null";
     private static final String NULL_STREAM_MESSAGE = "Sse Stream cannot be null";
+    private static final String COMPLETED_STREAM_MESSAGE = "Cannot add completed stream to sse registry";
+
 
 
     SseRegistry(SseRegistryBuilderImpl<ID, E> builder) {
@@ -47,13 +48,13 @@ public class SseRegistry<ID, E> {
         this.timeout = builder.timeout;
         this.maxQueuedEventsPerStream = builder.maxQueuedEventsPerStream;
         this.threadKeepAliveTime = builder.threadKeepAliveTime;
-        int maxEvents = builder.maxEvents;
         this.maxStreams = builder.maxStreams;
         this.onStreamComplete = builder.onComplete;
         this.onStreamTimeout = builder.onTimeout;
         this.onStreamError = builder.onError;
         this.eventPredicate = builder.eventPredicate;
 
+        int maxEvents = builder.maxEvents;
         this.eventRegistry = new EventHistory<>(maxEvents);
 
 
@@ -76,28 +77,27 @@ public class SseRegistry<ID, E> {
              if (this.isShutdown()) throw new SseRegistryShutdownException();
              if (this.streamRegistry.size() >= this.maxStreams) throw new SseRegistryFullException();
              final var newStream = this.createStream(id);
-             final var present = this.streamRegistry.putIfAbsent(id, newStream);
-             if(present != null) {
-                 this.registryExecutor.execute(newStream::complete); //Complete the newly created stream but don't block
-                 return present;
-             }
+             final var oldStream = this.streamRegistry.put(id, newStream);
+             if (oldStream != null) this.registryExecutor.execute(oldStream::complete); // dispatch this to a different thread to prevent blocking because of executor close op
              return newStream;
          }finally {
              lifeCycleLock.unlock();
          }
      }
 
-     public void register(ID id, SseStream stream){
+     public SseStream register(ID id, SseStream stream){
          assertNotNull(id, NULL_ID_MESSAGE);
          assertNotNull(stream, NULL_STREAM_MESSAGE);
+         assertTrue(stream.isCompleted(), COMPLETED_STREAM_MESSAGE);
 
          if (this.isShutdown()) throw new SseRegistryShutdownException();
          this.lifeCycleLock.lock();
          try{
              if (this.isShutdown()) throw new SseRegistryShutdownException();
              if (this.size() >= this.maxStreams) throw new SseRegistryFullException();
-             final var present = this.streamRegistry.put(id, stream); //Different semantics from create and register. Replaces the previous sse stream and completes it
-             if(present != null) this.registryExecutor.execute(present::complete); // dispatch this to a different thread to prevent blocking because of executor close op
+             final var oldStream = this.streamRegistry.put(id, stream); //Same semantics as create and register. Replaces the previous sse stream and completes it
+             if(oldStream != null) this.registryExecutor.execute(oldStream::complete); // dispatch this to a different thread to prevent blocking because of executor close op
+             return stream;
          }finally {
              this.lifeCycleLock.unlock();
          }
@@ -159,9 +159,10 @@ public class SseRegistry<ID, E> {
              final var c = CompletableFuture.runAsync(() -> this.removeWithoutLocking(id), this.registryExecutor);
              futures.add(c);
          });
-         final var soonCompleted = CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
-         this.registryExecutor.close(); //Close the exec first to reject new tasks. I actually realised that tasks maybe able to slip in if i completed the streams without closing the exec first
-         return soonCompleted;
+         futures.add(CompletableFuture.runAsync(this.registryExecutor::close)); //Close the exec after to reject new tasks. I actually realised that tasks maybe able to slip in if i completed the streams without closing the exec first.
+         //But don't block the main thread.
+
+         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
      }
 
      public boolean isShutdown(){
