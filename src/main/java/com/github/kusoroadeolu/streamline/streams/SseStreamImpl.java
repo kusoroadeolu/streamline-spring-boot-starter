@@ -162,9 +162,9 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
 
 
     @Override
-    public SseStream fromEmitter(SseEmitter emitter){
+    public SseStream fromEmitter(ImmutableSseEmitter emitter){
          assertNotNull(emitter, "Sse emitter cannot be null");
-         this.emitter = (ImmutableSseEmitter) emitter;
+         this.emitter = emitter;
          return new SseStreamImpl(this);
     }
 

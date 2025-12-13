@@ -88,7 +88,7 @@ public class SseRegistry<ID, E> {
      public SseStream register(ID id, SseStream stream){
          assertNotNull(id, NULL_ID_MESSAGE);
          assertNotNull(stream, NULL_STREAM_MESSAGE);
-         assertTrue(stream.isCompleted(), COMPLETED_STREAM_MESSAGE);
+         assertTrue(!stream.isCompleted(), COMPLETED_STREAM_MESSAGE);
 
          if (this.isShutdown()) throw new SseRegistryShutdownException();
          this.lifeCycleLock.lock();

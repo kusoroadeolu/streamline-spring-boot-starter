@@ -1,11 +1,14 @@
 package com.github.kusoroadeolu.streamline;
 
 import com.github.kusoroadeolu.streamline.registry.SseRegistry;
+import com.github.kusoroadeolu.streamline.streams.ImmutableSseEmitter;
+import com.github.kusoroadeolu.streamline.streams.SseStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -30,6 +33,7 @@ class SseIntegrationTest {
 
     @Test
     void shouldHandleMultipleStreamsInSpringContext() {
+        SseRegistry<String, TestEvent> registry = SseRegistry.<String, TestEvent>builder().build();
         for (int i = 0; i < 100; i++) {
             registry.createAndRegister("user" + i);
         }
@@ -41,6 +45,7 @@ class SseIntegrationTest {
         registry.shutdown().join();
         assertTrue(registry.isShutdown());
     }
+
 
     @Test
     void shouldHandleConcurrentOperationsInSpringContext()  {

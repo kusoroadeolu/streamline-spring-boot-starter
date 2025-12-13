@@ -17,7 +17,7 @@ public interface SseStreamBuilder {
 
     SseStreamBuilder maxQueuedEvents(int max);
 
-    SseStream fromEmitter(SseEmitter emitter);
+    SseStream fromEmitter(ImmutableSseEmitter emitter);
 
     SseStream build();
 }
