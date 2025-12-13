@@ -3,7 +3,6 @@ package com.github.kusoroadeolu.streamline.streams;
 import org.springframework.http.MediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.Collection;
 import java.util.concurrent.CompletableFuture;
 
 public interface SseStream {

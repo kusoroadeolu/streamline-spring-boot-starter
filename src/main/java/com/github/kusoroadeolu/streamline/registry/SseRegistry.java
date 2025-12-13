@@ -22,7 +22,6 @@ public class SseRegistry<ID, E> {
     final EventHistory<E> eventRegistry;
     private final ReentrantLock lifeCycleLock;
     private final long timeout;
-    private final int maxEvents;
     private final int maxStreams;
     private final int maxQueuedEventsPerStream;
     private final long threadKeepAliveTime;
@@ -35,7 +34,7 @@ public class SseRegistry<ID, E> {
 
     private static final String NULL_EVENT_MESSAGE = "Event cannot be null";
     private static final String NULL_ID_MESSAGE = "Id cannot be null";
-    private static final String NULL_STREAM_MESSAGE = "Stream cannot be null";
+    private static final String NULL_STREAM_MESSAGE = "Sse Stream cannot be null";
 
 
     SseRegistry(SseRegistryBuilderImpl<ID, E> builder) {
@@ -48,14 +47,14 @@ public class SseRegistry<ID, E> {
         this.timeout = builder.timeout;
         this.maxQueuedEventsPerStream = builder.maxQueuedEventsPerStream;
         this.threadKeepAliveTime = builder.threadKeepAliveTime;
-        this.maxEvents = builder.maxEvents;
+        int maxEvents = builder.maxEvents;
         this.maxStreams = builder.maxStreams;
         this.onStreamComplete = builder.onComplete;
         this.onStreamTimeout = builder.onTimeout;
         this.onStreamError = builder.onError;
         this.eventPredicate = builder.eventPredicate;
 
-        this.eventRegistry = new EventHistory<>(this.maxEvents);
+        this.eventRegistry = new EventHistory<>(maxEvents);
 
 
      }
@@ -65,11 +64,12 @@ public class SseRegistry<ID, E> {
      }
 
 
-     /*  --------------------------- REGISTRY LIFECYCLE --------------------------------------- */
+     //  --------------------------- REGISTRY LIFECYCLE ---------------------------------------
 
 
      public SseStream createAndRegister(ID id){
          assertNotNull(id, NULL_ID_MESSAGE);
+
          if (this.isShutdown()) throw new SseRegistryShutdownException();
          this.lifeCycleLock.lock();
          try{
@@ -77,8 +77,10 @@ public class SseRegistry<ID, E> {
              if (this.streamRegistry.size() >= this.maxStreams) throw new SseRegistryFullException();
              final var newStream = this.createStream(id);
              final var present = this.streamRegistry.putIfAbsent(id, newStream);
-             if(present != null) return present;
-             this.registryExecutor.execute(newStream::complete); //Complete the newly created stream but don't block
+             if(present != null) {
+                 this.registryExecutor.execute(newStream::complete); //Complete the newly created stream but don't block
+                 return present;
+             }
              return newStream;
          }finally {
              lifeCycleLock.unlock();
@@ -94,8 +96,8 @@ public class SseRegistry<ID, E> {
          try{
              if (this.isShutdown()) throw new SseRegistryShutdownException();
              if (this.size() >= this.maxStreams) throw new SseRegistryFullException();
-             final var absent = this.streamRegistry.put(id, stream); //Different semantics from create and register. Replaces the previous sse stream and completes it
-             if(absent != null) this.registryExecutor.execute(absent::complete); // dispatch this to a different thread to prevent blocking because of executor close op
+             final var present = this.streamRegistry.put(id, stream); //Different semantics from create and register. Replaces the previous sse stream and completes it
+             if(present != null) this.registryExecutor.execute(present::complete); // dispatch this to a different thread to prevent blocking because of executor close op
          }finally {
              this.lifeCycleLock.unlock();
          }
@@ -157,7 +159,7 @@ public class SseRegistry<ID, E> {
              final var c = CompletableFuture.runAsync(() -> this.removeWithoutLocking(id), this.registryExecutor);
              futures.add(c);
          });
-         var soonCompleted = CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+         final var soonCompleted = CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
          this.registryExecutor.close(); //Close the exec first to reject new tasks. I actually realised that tasks maybe able to slip in if i completed the streams without closing the exec first
          return soonCompleted;
      }
@@ -238,7 +240,7 @@ final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     Runnable onComplete;
     Runnable onTimeout;
     Consumer<Throwable> onError;
-    long timeout;
+    long timeout = 60_000L;
     EventEvictionPolicy eventEvictionPolicy;
     Predicate<E> eventPredicate;
     private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";

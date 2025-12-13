@@ -1,6 +1,7 @@
 package com.github.kusoroadeolu.streamline.streams;
 
 import com.github.kusoroadeolu.streamline.exceptions.IllegalModificationException;
+import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.concurrent.atomic.AtomicBoolean;

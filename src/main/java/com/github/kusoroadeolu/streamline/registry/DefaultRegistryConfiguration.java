@@ -8,13 +8,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class DefaultRegistryConfiguration {
 
-        @Bean(name = "defaultSseRegistry")
+        @Bean(name = "defaultSseRegistry", destroyMethod = "shutdown")
         @ConditionalOnMissingBean(SseRegistry.class)
-        public SseRegistry<String, Object> defaultSseRegistry() {
-            return SseRegistry.<String, Object>builder()
-                    .maxStreams(1000)
+        public SseRegistry<Object, Object> defaultSseRegistry() {
+            return SseRegistry.builder()
+                    .maxStreams(100)
                     .maxEvents(100)
-                    .streamTimeout(60_000L)
                     .build();
         }
 }
