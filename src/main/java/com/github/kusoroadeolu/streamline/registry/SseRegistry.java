@@ -15,6 +15,33 @@ import java.util.function.Predicate;
 
 import static com.github.kusoroadeolu.streamline.utils.ApiUtils.*;
 
+//Split this class into life cyle and event replay just so I can navigate it easier
+
+/**
+ * Thread-safe registry managing multiple SSE streams.
+ *
+ * <p>Maps IDs to {@link SseStream} instances, stores event history,
+ * and coordinates broadcasting. Uses virtual threads for non-blocking
+ * concurrent sends.
+ *
+ * <p><b>Thread Safety:</b> All public methods are thread-safe. Internal
+ * locking ensures consistent state during lifecycle operations (create,
+ * register, remove, shutdown).
+ *
+ * <p><b>Limits:</b>
+ * <ul>
+ *   <li>Max streams: configured via builder (throws {@link SseRegistryFullException})
+ *   <li>Event history: bounded, evicts based on {@link EventEvictionPolicy}
+ *   <li>Single-instance only (no distributed state)
+ * </ul>
+ *
+ * <p><b>Shutdown behavior:</b> After {@link #shutdown()}, the registry
+ * rejects new operations with {@link SseRegistryShutdownException}. In-flight
+ * operations complete normally.
+ *
+ * @param <ID> Stream identifier type (user ID, session ID, etc.)
+ * @param <E> Event type stored in history
+ */
 public class SseRegistry<ID, E> {
     private final Map<ID, SseStream> streamRegistry;
     final ExecutorService registryExecutor;
@@ -67,7 +94,19 @@ public class SseRegistry<ID, E> {
 
      //  --------------------------- REGISTRY LIFECYCLE ---------------------------------------
 
-
+    /**
+     * Creates a new stream and registers it with the given ID.
+     *
+     * <p>If a stream with this ID already exists, the old stream is
+     * completed and replaced. The old stream's completion happens
+     * asynchronously on the registry executor.
+     *
+     * @param id The ID to map to the new stream
+     * @return The newly created stream
+     * @throws IllegalArgumentException if {@code id} is null
+     * @throws SseRegistryFullException if registry is at max capacity
+     * @throws SseRegistryShutdownException if registry is shut down
+     */
      public SseStream createAndRegister(ID id){
          assertNotNull(id, NULL_ID_MESSAGE);
 
@@ -85,6 +124,21 @@ public class SseRegistry<ID, E> {
          }
      }
 
+    /**
+     * Registers an existing stream with the given ID.
+     *
+     * <p>If a stream with this ID already exists, the old stream is
+     * completed and replaced. The old stream's completion happens
+     * asynchronously on the registry executor.
+     *
+     * @param id The ID to map to the stream
+     * @param stream The stream to register
+     * @return The registered stream (same instance passed in)
+     * @throws IllegalArgumentException if {@code id} or {@code stream} is null,
+     *         or if {@code stream} is already completed
+     * @throws SseRegistryFullException if registry is at max capacity
+     * @throws SseRegistryShutdownException if registry is shut down
+     */
      public SseStream register(ID id, SseStream stream){
          assertNotNull(id, NULL_ID_MESSAGE);
          assertNotNull(stream, NULL_STREAM_MESSAGE);
@@ -103,12 +157,33 @@ public class SseRegistry<ID, E> {
          }
      }
 
+    /**
+     * Retrieves the stream mapped to the given ID.
+     *
+     * <p><b>Note:</b> This method is not locked. In rare cases during
+     * shutdown, it may return a completed stream or null for an ID
+     * that was previously registered.
+     *
+     * @param id The ID to look up
+     * @return The stream mapped to this ID, or {@code null} if none exists
+     * @throws IllegalArgumentException if {@code id} is null
+     * @throws SseRegistryShutdownException if registry is shut down
+     */
      public SseStream get(ID id){
          assertNotNull(id, NULL_ID_MESSAGE);
          if (this.isShutdown()) throw new SseRegistryShutdownException();
          return this.streamRegistry.get(id); //Didn't lock this operation, locking adds a bit of overhead for minimal benefit. Only issue is the user could get a complete stream or no stream at all when the registry shuts down
      }
 
+    /**
+     * Removes and completes the stream mapped to the given ID.
+     *
+     * <p>The stream's completion happens asynchronously on the registry
+     * executor. If the registry is shut down, this method returns silently.
+     *
+     * @param id The ID of the stream to remove
+     * @throws IllegalArgumentException if {@code id} is null
+     */
      public void remove(ID id){
          assertNotNull(id, NULL_ID_MESSAGE);
          if (this.isShutdown()) return;
@@ -122,27 +197,70 @@ public class SseRegistry<ID, E> {
          }
      }
 
+     /**
+      * @return The current size of the registry
+      * */
      public int size(){
+         if (this.isShutdown()) return 0;
          return this.streamRegistry.size();
      }
 
-
+    /**
+     * Broadcasts an event to all registered streams.
+     *
+     * <p>Sends happen in parallel using virtual threads. Completed streams
+     * are automatically skipped. The event is added to the registry's event
+     * history before broadcasting.
+     *
+     * <p><b>Race condition:</b> If shutdown occurs between the initial check
+     * and submission, the broadcast may fail. This does not corrupt state -
+     * the event simply isn't delivered.
+     * </br> This decision was made to prevent locking sends which could lead to deadlocks if used poorly and also to prevent times when the lock is held for too long
+     *
+     * @param event The event to broadcast
+     * @return A {@link CompletableFuture} that completes when all sends finish
+     * @throws IllegalArgumentException if {@code event} is null
+     * @throws SseRegistryShutdownException if registry is shut down
+     */
      //Broadcasts of events during a shutdown that haven't been submitted yet will simply fail and throw a completion exception
      public CompletableFuture<Void> broadcast(E event){
          assertNotNull(event, NULL_EVENT_MESSAGE);
          if (this.isShutdown()) throw new SseRegistryShutdownException(); //Just a simple check here, a race condition here is not devastating since it doesn't corrupt the registry state. Just doesn't deliver the event clients
          this.registerEvent(event);
          final var futures = new ArrayList<CompletableFuture<Void>>();
-         this.streamRegistry.forEach((id, s) -> futures.add(CompletableFuture.runAsync(() -> this.send(id, event), this.registryExecutor)));
+         this.streamRegistry.forEach((id, s) -> futures.add(CompletableFuture.runAsync(() -> this.sendWithoutId(s, event), this.registryExecutor)));
          return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
      }
 
+    /**
+     * Sends an event to the stream mapped to the given ID.
+     *
+     * <p>The event is added to the registry's event history before sending.
+     *
+     * @param id The ID of the target stream
+     * @param event The event to send
+     * @return {@code true} if the event was sent successfully, {@code false}
+     *         if the stream doesn't exist, is completed, or registry is shut down
+     * @throws IllegalArgumentException if {@code id} or {@code event} is null
+     */
      public boolean sendTo(ID id, E event){
          assertNotNull(id, NULL_ID_MESSAGE);
          assertNotNull(event, NULL_EVENT_MESSAGE);
          return this.send(id, event);
      }
 
+    /**
+     * Shuts down the registry.
+     *
+     * <p>All registered streams are submitted for completion on the registry
+     * executor. The executor is closed after all streams are submitted, preventing
+     * new tasks from being accepted.
+     *
+     * <p>This method is idempotent, calling it multiple times has no effect.
+     *
+     * @return A {@link CompletableFuture} that completes when all streams
+     *         are completed and the executor is closed
+     */
      public CompletableFuture<Void> shutdown(){
          if(this.isShutdown()) return CompletableFuture.completedFuture(null);
 
@@ -155,8 +273,8 @@ public class SseRegistry<ID, E> {
          }
 
          final var futures = new ArrayList<CompletableFuture<Void>>(this.streamRegistry.size());
-         this.streamRegistry.forEach((id, e) -> {
-             final var c = CompletableFuture.runAsync(() -> this.removeWithoutLocking(id), this.registryExecutor);
+         this.streamRegistry.forEach((id, s) -> {
+             final var c = CompletableFuture.runAsync(s::complete, this.registryExecutor);
              futures.add(c);
          });
          futures.add(CompletableFuture.runAsync(this.registryExecutor::close)); //Close the exec after to reject new tasks. I actually realised that tasks maybe able to slip in if i completed the streams without closing the exec first.
@@ -164,10 +282,22 @@ public class SseRegistry<ID, E> {
 
          return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
      }
-
+     /**
+      * @return true or false if the registry is shutdown or not
+      * */
      public boolean isShutdown(){
          return this.status == RegistryStatus.SHUTDOWN; //Should be correct 100% of the time with a 3% margin of error lol
      }
+
+    private void sendWithoutId(SseStream stream, E event){
+        try {
+            if (this.isShutdown()) return;
+            this.registerEvent(event);
+            if (stream == null) return;
+            stream.send(event);
+        }catch (SseStreamCompletedException | CompletionException ignored){
+        }
+    }
 
     private boolean send(ID id, E event){
         try {
@@ -181,11 +311,6 @@ public class SseRegistry<ID, E> {
         }catch (SseStreamCompletedException | CompletionException ignored){
             return false;
         }
-    }
-
-    private void removeWithoutLocking(ID id){ //helper method to prevent deadlocks that would occur with using `remove` instead
-        final var stream = this.streamRegistry.remove(id); //Same semantics as get()
-        if (stream != null) stream.complete();
     }
 
      private SseStream createStream(ID id){
@@ -217,12 +342,38 @@ public class SseRegistry<ID, E> {
 
 
     //  --------------------------- EVENT REPLAY ---------------------------------------
-    // Same semantics as broadcast
+    /**
+     * Registers an event in the history without broadcasting it.
+     *
+     * <p>Useful for pre-populating event history or when broadcasting
+     * happens separately. The event is subject to the configured eviction
+     * policy and predicate filter.
+     *
+     * @param event The event to register
+     * @throws IllegalArgumentException if {@code event} is null
+     * @throws SseRegistryShutdownException if registry is shut down
+     */
     public void registerEvent(E event){
+        assertNotNull(event, NULL_EVENT_MESSAGE);
+        if (this.isShutdown()) throw new SseRegistryShutdownException();
         this.eventRegistry.add(event, this.eventEvictionPolicy, this.eventPredicate);
     }
 
+    /**
+     * Creates a builder for replaying events from history.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * registry.replay()
+     *     .matching(e -> e.getId().compareTo(lastEventId) > 0)
+     *     .to(userId);
+     * }</pre>
+     *
+     * @return A new {@link EventReplayBuilder} for configuring replay
+     * @throws SseRegistryShutdownException if registry is shut down
+     */
     public EventReplayBuilder<ID, E> replay(){
+         if (this.isShutdown()) throw new SseRegistryShutdownException();
          return new EventReplayBuilder<>(this.registryExecutor, this.eventRegistry.getAll(), this.streamRegistry);
     }
 
@@ -242,48 +393,58 @@ final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     Runnable onTimeout;
     Consumer<Throwable> onError;
     long timeout = 60_000L;
-    EventEvictionPolicy eventEvictionPolicy;
+    EventEvictionPolicy eventEvictionPolicy = EventEvictionPolicy.FIFO;
     Predicate<E> eventPredicate;
     private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";
     private final static String KEEP_ALIVE_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";
     private final static String MAX_QUEUED_EVENTS_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";
+    private final static String NULL_CALLBACK_MESSAGE = "Sse callbacks cannot be null";
+    private final static String NULL_PREDICATE_MESSAGE = "Event predicate cannot be null";
+    private final static String NULL_EVICTION_POLICY = "Event eviction policy cannot be null";
+    private final static String LESS_THAN_ONE_MESSAGE = "Cannot be less than one";
 
-    @Override
     public SseRegistryBuilder<ID, E> onStreamTimeout(Runnable callback) {
+        assertNotNull(callback, NULL_CALLBACK_MESSAGE);
         this.onTimeout = callback;
         return this;
     }
 
+
     public SseRegistryBuilderImpl<ID, E> eventEvictionPolicy(EventEvictionPolicy policy) {
+        assertNotNull(policy, NULL_EVICTION_POLICY);
         this.eventEvictionPolicy = policy;
         return this;
     }
 
     public SseRegistryBuilderImpl<ID, E> allowEvents(Predicate<E> eventPredicate) {
+        assertNotNull(eventEvictionPolicy, NULL_PREDICATE_MESSAGE);
         this.eventPredicate = eventPredicate;
         return this;
     }
 
-    @Override
+
+
     public SseRegistryBuilder<ID, E> onStreamError(Consumer<Throwable> callback) {
+        assertNotNull(callback, NULL_CALLBACK_MESSAGE);
         this.onError = callback;
         return this;
     }
 
-    @Override
+
     public SseRegistryBuilder<ID, E> onStreamComplete(Runnable callback) {
+        assertNotNull(callback, NULL_CALLBACK_MESSAGE);
         this.onComplete = callback;
         return this;
     }
 
-    @Override
+
     public SseRegistryBuilder<ID, E> streamThreadKeepAliveTime(long timeInSeconds){
         assertPositive(timeInSeconds, KEEP_ALIVE_NEGATIVE_MESSAGE);
         this.threadKeepAliveTime = timeInSeconds;
         return this;
     }
 
-    @Override
+
     public SseRegistryBuilder<ID, E> maxQueuedEventsPerStream(int maxQueuedEvents){
         assertPositive(maxQueuedEvents, MAX_QUEUED_EVENTS_NEGATIVE_MESSAGE);
         this.maxQueuedEventsPerStream = maxQueuedEvents;
@@ -291,21 +452,23 @@ final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     }
 
 
-    @Override
+
     public SseRegistryBuilder<ID, E> streamTimeout(long timeout) {
         assertPositive(timeout, TIMEOUT_NEGATIVE_MESSAGE);
         this.timeout = timeout;
         return this;
     }
 
-    @Override
+
     public SseRegistryBuilder<ID, E> maxEvents(int maxEvents) {
+        assertTrue(maxEvents >= 1, LESS_THAN_ONE_MESSAGE);
         this.maxEvents = maxEvents;
         return this;
     }
 
-    @Override
+
     public SseRegistryBuilder<ID, E> maxStreams(int maxStreams) {
+        assertTrue(maxStreams >= 1, LESS_THAN_ONE_MESSAGE);
         this.maxStreams = maxStreams;
         return this;
     }
