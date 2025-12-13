@@ -2,17 +2,17 @@ package com.github.kusoroadeolu.streamline.streams;
 
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamCompletedException;
 import com.github.kusoroadeolu.streamline.exceptions.SseStreamIOException;
+import jakarta.servlet.AsyncContext;
 import org.apache.tomcat.util.threads.VirtualThreadExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -188,7 +188,6 @@ class SseStreamImplTest {
         stream.getEmitter().complete();
         assertDoesNotThrow(() -> stream.complete());
     }
-
 
 
 }

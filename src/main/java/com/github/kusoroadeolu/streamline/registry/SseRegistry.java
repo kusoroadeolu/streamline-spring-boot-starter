@@ -68,17 +68,18 @@ public class SseRegistry<ID, E> {
      /*  --------------------------- REGISTRY LIFECYCLE --------------------------------------- */
 
 
-     public void createAndRegister(ID id){
+     public SseStream createAndRegister(ID id){
          assertNotNull(id, NULL_ID_MESSAGE);
          if (this.isShutdown()) throw new SseRegistryShutdownException();
          this.lifeCycleLock.lock();
          try{
              if (this.isShutdown()) throw new SseRegistryShutdownException();
              if (this.streamRegistry.size() >= this.maxStreams) throw new SseRegistryFullException();
-             final var newStream = this.createStream();
-             final var absent = this.streamRegistry.putIfAbsent(id, newStream);
-             if(absent != null) return;
-             this.registryExecutor.execute(newStream::complete); //Complete the newly created stream but dont block
+             final var newStream = this.createStream(id);
+             final var present = this.streamRegistry.putIfAbsent(id, newStream);
+             if(present != null) return present;
+             this.registryExecutor.execute(newStream::complete); //Complete the newly created stream but don't block
+             return newStream;
          }finally {
              lifeCycleLock.unlock();
          }
@@ -113,8 +114,7 @@ public class SseRegistry<ID, E> {
          try {
              if (this.isShutdown()) return;
              final var stream = this.streamRegistry.remove(id);
-             if (stream == null) return;
-             this.registryExecutor.execute(stream::complete);
+             if (stream != null) this.registryExecutor.execute(stream::complete);
          }finally {
              this.lifeCycleLock.unlock();
          }
@@ -185,12 +185,28 @@ public class SseRegistry<ID, E> {
         if (stream != null) stream.complete();
     }
 
-     private SseStream createStream(){
+     private SseStream createStream(ID id){
+         final Runnable onComplete = () -> {
+             this.streamRegistry.remove(id);
+             if (this.onStreamComplete != null) this.onStreamComplete.run();
+         };
+
+         final Runnable onTimeout = () -> {
+             this.streamRegistry.remove(id);
+             if (this.onStreamTimeout != null) this.onStreamTimeout.run();
+         };
+
+         final Consumer<Throwable> onError = e -> {
+             this.streamRegistry.remove(id);
+             if (this.onStreamError != null) this.onStreamError.accept(e);
+         };
+
+
          return SseStream.builder()
                  .withTimeout(this.timeout)
-                 .onCompletion(this.onStreamComplete)
-                 .onError(this.onStreamError)
-                 .onTimeout(this.onStreamTimeout)
+                 .onCompletion(onComplete)
+                 .onError(onError)
+                 .onTimeout(onTimeout)
                  .maxQueuedEvents(this.maxQueuedEventsPerStream)
                  .threadKeepAliveTime(this.threadKeepAliveTime)
                  .build();
@@ -217,8 +233,8 @@ public class SseRegistry<ID, E> {
 final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     int maxEvents;
     int maxStreams;
-    int maxQueuedEventsPerStream;
-    long threadKeepAliveTime;
+    int maxQueuedEventsPerStream = 50;
+    long threadKeepAliveTime = 1;
     Runnable onComplete;
     Runnable onTimeout;
     Consumer<Throwable> onError;

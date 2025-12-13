@@ -21,15 +21,17 @@ public class SseStreamImpl implements SseStream {
     private final ExecutorService executorService;
     private final ReentrantLock statusLock;
     private volatile StreamStatus streamStatus;
+    private final ArrayBlockingQueue<Runnable> blockingQueue;
 
     SseStreamImpl(SseStreamBuilderImpl sseChannelImplBuilder) {
         this.emitter = sseChannelImplBuilder.emitter;
         this.statusLock = new ReentrantLock();
         this.streamStatus = ACTIVE;
+        this.blockingQueue = new ArrayBlockingQueue<>(sseChannelImplBuilder.maxQueuedEvents);
         this.executorService =
                 new ThreadPoolExecutor(0, 1,
                         sseChannelImplBuilder.keepAliveTime,
-                        TimeUnit.SECONDS, new ArrayBlockingQueue<>(sseChannelImplBuilder.maxQueuedEvents),
+                        TimeUnit.SECONDS, this.blockingQueue,
                         Thread.ofVirtual().factory());
 
     }
@@ -75,6 +77,10 @@ public class SseStreamImpl implements SseStream {
 
     public SseEmitter getEmitter(){
         return this.emitter;
+    }
+
+    public int queueSize(){
+        return this.blockingQueue.size();
     }
 
     private void markCompleted(){
@@ -154,12 +160,12 @@ class SseStreamBuilderImpl implements SseStreamBuilder {
         return this;
     }
 
+
+    @Override
     public SseStream fromEmitter(SseEmitter emitter){
          assertNotNull(emitter, "Sse emitter cannot be null");
          this.emitter = (ImmutableSseEmitter) emitter;
-         final var stream = new SseStreamImpl(this);
-         this.configureCallback(stream);
-         return stream;
+         return new SseStreamImpl(this);
     }
 
 

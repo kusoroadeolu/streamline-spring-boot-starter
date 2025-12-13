@@ -23,5 +23,7 @@ public interface SseStream {
 
     SseEmitter getEmitter();
 
+    int queueSize();
+
     boolean isCompleted();
 }
