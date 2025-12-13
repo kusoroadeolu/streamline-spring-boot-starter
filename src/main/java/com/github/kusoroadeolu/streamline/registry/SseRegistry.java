@@ -130,7 +130,7 @@ public class SseRegistry<ID, E> {
      //Broadcasts of events during a shutdown that haven't been submitted yet will simply fail and throw a completion exception
      public CompletableFuture<Void> broadcast(E event){
          assertNotNull(event, NULL_EVENT_MESSAGE);
-         if (this.isShutdown()) throw new SseRegistryShutdownException(); //Just a simple check here, a race condition here is not devastating since it doesn't corrupt the registry state
+         if (this.isShutdown()) throw new SseRegistryShutdownException(); //Just a simple check here, a race condition here is not devastating since it doesn't corrupt the registry state. Just doesn't deliver the event clients
          this.registerEvent(event);
          final var futures = new ArrayList<CompletableFuture<Void>>();
          this.streamRegistry.forEach((id, s) -> futures.add(CompletableFuture.runAsync(() -> this.send(id, event), this.registryExecutor)));
@@ -314,9 +314,6 @@ final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
         return new SseRegistry<>(this);
     }
 }
-
-
-
 
 enum RegistryStatus{
     ACTIVE,
