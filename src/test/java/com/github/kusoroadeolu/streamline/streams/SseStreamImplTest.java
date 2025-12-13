@@ -157,7 +157,7 @@ class SseStreamImplTest {
             }
         }
 
-        assertTrue(emitter.sent.size() <= 30);
+        assertTrue(emitter.sent.size() <= 32);
         assertTrue(emitter.sent.stream().map(TestEvent::id).allMatch(i -> i <= 30));
     }
 

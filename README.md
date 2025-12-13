@@ -1,13 +1,11 @@
 # Streamline
 
-Thread-safe SSE for Spring Boot using virtual threads.
+Thread safe SSE management for Spring Boot using virtual threads.
 
 ## What is this?
-
 A Spring Boot library that wraps Spring's `SseEmitter` with thread-safe management, automatic cleanup, and event replay. Built on virtual threads for blocking I/O at scale.
 
 ## What problem does it solve?
-
 Spring's `SseEmitter` gives you the emitter, but nothing else. Every SSE implementation ends up writing the same boilerplate:
 
 **Without Streamline:**
@@ -27,7 +25,7 @@ public void broadcast(Event event) {
         dead.forEach(emitters::remove);
     } finally { lock.unlock(); }
 }
-// + event history, reconnection replay, shutdown hooks...
+// + auto removal on death, event history, reconnection replay, shutdown hooks
 ```
 
 **With Streamline:**
@@ -39,7 +37,7 @@ registry.broadcast(event);  // All of the above handled
 
 Streamline handles concurrency, lifecycle, cleanup, and replay so you don't have to.
 
-## Mental Model
+## Streamline Mental Model
 
 Streamline has three core components that work together:
 
@@ -112,12 +110,34 @@ Streamline has three core components that work together:
 ## Quick Start
 **1. Add dependency:**
 
+**Maven**
 ```xml
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
 <dependency>
     <groupId>com.github.kusoroadeolu</groupId>
     <artifactId>streamline-spring-boot-starter</artifactId>
     <version>1.0.0</version>
 </dependency>
+```
+**Gradle**
+```gradle
+dependencyResolutionManagement {
+	repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+		repositories {
+			mavenCentral()
+			maven { url 'https://jitpack.io' }
+	}
+}
+
+dependencies {
+	implementation 'com.github.kusoroadeolu:streamline-spring-boot-starter:-SNAPSHOT'
+}
 ```
 
 **2. Create a registry bean:**
@@ -196,7 +216,7 @@ es.onmessage = (e) => console.log(JSON.parse(e.data));
 
 **Stack Unfit for:**
 - WebFlux/reactive applications (use built-in reactive SSE instead)
--  Multi-instance deployments requiring sticky sessions or shared state
+- Multi-instance deployments requiring sticky sessions or shared state
 
 ## Constraints & Failure Modes
 
@@ -264,7 +284,7 @@ es.onmessage = (e) => console.log(JSON.parse(e.data));
 // Check active streams
 int active = registry.size();
 
-// Check stream queue depth
+// Check stream queue size
 SseStream stream = registry.get(userId);
 int queued = stream.queueSize();
 

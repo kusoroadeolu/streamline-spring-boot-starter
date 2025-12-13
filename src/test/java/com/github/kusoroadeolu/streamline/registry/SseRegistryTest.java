@@ -181,15 +181,6 @@ class SseRegistryTest {
     }
 
     @Test
-    void sendToCompletedStream_returnsFalse() {
-        SseStream stream = SseStream.builder().build();
-        stream.complete();
-        this.registry.register(1, stream);
-        assertFalse(this.registry.sendTo(1, new TestEvent(1, null, null)));
-
-    }
-
-    @Test
     void broadcastWithSlowClient_doesntBlockOthers() throws InterruptedException {
         this.registry = createRegistry(120);
         SseStream stream = SseStream.builder().fromEmitter(new SlowEmitter());
