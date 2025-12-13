@@ -1,6 +1,6 @@
 package com.github.kusoroadeolu.streamline.exceptions;
 
-public class SseStreamIOException extends ApiException {
+public class SseStreamIOException extends SseStreamException {
 
     public SseStreamIOException() {
         super();
