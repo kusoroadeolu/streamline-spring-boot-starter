@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.github.kusoroadeolu</groupId>
     <artifactId>streamline-spring-boot-starter</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>streamline-spring-boot-starter</name>
     <description>streamline-spring-boot-starter</description>
     <url/>
