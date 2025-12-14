@@ -233,7 +233,7 @@ es.onmessage = (e) => console.log(JSON.parse(e.data));
 ### Eviction Policies
 
 ```java
-.eventEvictionPoli[README.md](README.md)cy(EventEvictionPolicy.FIFO)  // Remove oldest (default)
+.eventEvictionPolicy(EventEvictionPolicy.FIFO)  // Remove oldest (default)
 .eventEvictionPolicy(EventEvictionPolicy.LIFO)  // Remove newest
 .eventEvictionPolicy(EventEvictionPolicy.STRICT) // Throw exception
 ```
@@ -390,8 +390,8 @@ registry.register(userId, stream);
 ```java
 ImmutableSseEmitter emitter = new ImmutableSseEmitter(30_000L);
 SseStream stream = SseStream.builder()
-    .fromEmitter(emitter)
-    .build();
+    .fromEmitter(emitter);
+
 registry.register(userId, stream);
 ```
 
