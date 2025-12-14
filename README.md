@@ -1,6 +1,10 @@
 # Streamline
-
 Thread safe SSE management for Spring Boot using virtual threads.
+
+## ⚠️ Important Release Notice
+> **v1.0.2 is the first stable and usable release.**  
+> Versions `v1.0.0` and `v1.0.1` failed to build due to a packaging misconfiguration and  cannot be used.
+
 
 ## What is SSE
 Server Sent Events (SSE) is a standard HTTP mechanism for pushing unidirectional event streams from server to browser over a long lived http connection.
@@ -112,7 +116,7 @@ Streamline has three core components that work together:
 
 ## Quick Start
 **1. Add dependency:**
-
+[![](https://jitpack.io/v/kusoroadeolu/streamline-spring-boot-starter.svg)](https://jitpack.io/#kusoroadeolu/streamline-spring-boot-starter)
 **Maven**
 ```xml
 <repositories>
@@ -125,7 +129,7 @@ Streamline has three core components that work together:
 <dependency>
     <groupId>com.github.kusoroadeolu</groupId>
     <artifactId>streamline-spring-boot-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 **Gradle**
@@ -139,7 +143,7 @@ dependencyResolutionManagement {
 }
 
 dependencies {
-	implementation 'com.github.kusoroadeolu:streamline-spring-boot-starter:-SNAPSHOT'
+	implementation 'com.github.kusoroadeolu:streamline-spring-boot-starter: 1.0.2'
 }
 ```
 
