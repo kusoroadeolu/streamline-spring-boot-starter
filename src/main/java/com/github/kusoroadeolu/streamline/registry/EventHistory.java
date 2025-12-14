@@ -24,14 +24,22 @@ final class EventHistory<E> {
     public void add(E event, EventEvictionPolicy policy, Predicate<E> eventPredicate) {
         this.lock.lock();
         try {
-            if (eventPredicate != null && eventPredicate.test(event)){
-                if (this.events.size() < this.maxSize) return;
-                switch (policy){
-                    case STRICT -> throw new EventHistoryLimitReachedException(ERR_MESSAGE.formatted(this.events.size()));
+            if (eventPredicate != null && !eventPredicate.test(event)) {
+                return;
+            }
+
+            if (this.events.size() >= this.maxSize) {
+                switch (policy) {
+                    case STRICT -> throw new EventHistoryLimitReachedException(
+                            ERR_MESSAGE.formatted(this.maxSize)
+                    );
                     case FIFO -> this.events.removeFirst();
                     case LIFO -> this.events.removeLast();
                 }
             }
+
+            this.events.add(event);
+
         } finally {
             lock.unlock();
         }

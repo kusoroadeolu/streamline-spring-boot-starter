@@ -2,8 +2,8 @@
 Thread safe SSE management for Spring Boot using virtual threads.
 
 ## ⚠️ Important Release Notice
-> **v1.0.2 is the first stable and usable release.**  
-> Versions `v1.0.0` and `v1.0.1` failed to build due to a packaging misconfiguration and  cannot be used.
+> **v1.0.3 is the first stable and usable release.**  
+> Versions `v1.0.0` and `v1.0.1` and `v1.0.2` failed to build due to a packaging misconfiguration and  cannot be used.
 
 
 ## What is SSE
