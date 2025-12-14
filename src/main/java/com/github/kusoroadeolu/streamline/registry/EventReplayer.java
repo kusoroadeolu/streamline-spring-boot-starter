@@ -43,7 +43,7 @@ public final class EventReplayer<ID, E>{
 
 
      public CompletableFuture<Void> toAll(){
-         return this.toAllMatching(id -> true);
+         return this.toAllMatching(p -> true);
      }
 
     public CompletableFuture<Void> toAllMatching(Predicate<ID> idPredicate){
