@@ -129,7 +129,7 @@ Streamline has three core components that work together:
 <dependency>
     <groupId>com.github.kusoroadeolu</groupId>
     <artifactId>streamline-spring-boot-starter</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 </dependency>
 ```
 **Gradle**
@@ -143,7 +143,7 @@ dependencyResolutionManagement {
 }
 
 dependencies {
-	implementation 'com.github.kusoroadeolu:streamline-spring-boot-starter: 1.0.2'
+	implementation 'com.github.kusoroadeolu:streamline-spring-boot-starter: 1.0.3'
 }
 ```
 
