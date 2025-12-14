@@ -203,10 +203,32 @@ class SseRegistryTest {
 
     }
 
+    @Test
+    void onBroadcast_shouldRespectIdPredicate(){
+        var testRegistry = SseRegistry.<Integer, TestEvent>builder().build();
+        FakeEmitter f1 = new FakeEmitter();
+        FakeEmitter f2 = new FakeEmitter();
+        FakeEmitter f3 = new FakeEmitter();
+        var stream1 = SseStream.builder().fromEmitter(f1);
+        var stream2 = SseStream.builder().fromEmitter(f2);
+        var stream3 = SseStream.builder().fromEmitter(f3);
+
+        testRegistry.register(1, stream1);
+        testRegistry.register(2, stream2);
+        testRegistry.register(3, stream3);
+
+        testRegistry.broadcast(new TestEvent(1, null, null), i -> i > 1).join();
+
+        assertEquals(0,  f1.sent.size());
+        assertEquals(1, f2.sent.size());
+        assertEquals(1, f3.sent.size());
+    }
 
     private SseRegistry<Object, TestEvent> createRegistry(int maxStreams){
         return SseRegistry.<Object, TestEvent>builder().maxEvents(10).maxStreams(maxStreams).build();
     }
+
+
 
 }
 

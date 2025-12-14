@@ -109,7 +109,6 @@ public class SseRegistry<ID, E> {
      */
      public SseStream createAndRegister(ID id){
          assertNotNull(id, NULL_ID_MESSAGE);
-
          if (this.isShutdown()) throw new SseRegistryShutdownException();
          this.lifeCycleLock.lock();
          try{
@@ -224,13 +223,41 @@ public class SseRegistry<ID, E> {
      */
      //Broadcasts of events during a shutdown that haven't been submitted yet will simply fail and throw a completion exception
      public CompletableFuture<Void> broadcast(E event){
-         assertNotNull(event, NULL_EVENT_MESSAGE);
-         if (this.isShutdown()) throw new SseRegistryShutdownException(); //Just a simple check here, a race condition here is not devastating since it doesn't corrupt the registry state. Just doesn't deliver the event clients
-         this.registerEvent(event);
-         final var futures = new ArrayList<CompletableFuture<Void>>();
-         this.streamRegistry.forEach((id, s) -> futures.add(CompletableFuture.runAsync(() -> this.sendWithoutId(s, event), this.registryExecutor)));
-         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+         return this.broadcast(event, id -> true);
      }
+
+    /**
+     * Broadcasts an event to registered streams whose ID pass the predicate test
+     *
+     * <p>Sends happen in parallel using virtual threads. Completed streams
+     * are automatically skipped. The event is added to the registry's event
+     * history before broadcasting.
+     *
+     * <p><b>Race condition:</b> If shutdown occurs between the initial check
+     * and submission, the broadcast may fail. This does not corrupt state -
+     * the event simply isn't delivered.
+     * </br> This decision was made to prevent locking sends which could lead to deadlocks if used poorly and also to prevent times when the lock is held for too long
+     *
+     * @param event The event to broadcast
+     * @param idPredicate The id predicate
+     * @return A {@link CompletableFuture} that completes when all sends finish
+     * @throws IllegalArgumentException if {@code event} is null
+     * @throws SseRegistryShutdownException if registry is shut down
+     */
+    public CompletableFuture<Void> broadcast(E event, Predicate<ID> idPredicate){
+        assertNotNull(event, NULL_EVENT_MESSAGE);
+        if (this.isShutdown()) throw new SseRegistryShutdownException(); //Just a simple check here, a race condition here is not devastating since it doesn't corrupt the registry state. Just doesn't deliver the event clients
+        this.registerEvent(event);
+        final var futures = new ArrayList<CompletableFuture<Void>>();
+        this.streamRegistry.forEach((id, s) -> futures.add(CompletableFuture.runAsync(() -> {
+            if (idPredicate.test(id)){
+                this.sendWithoutId(s, event);
+            }
+        }, this.registryExecutor)));
+        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+    }
+
+
 
     /**
      * Sends an event to the stream mapped to the given ID.
@@ -385,8 +412,8 @@ public class SseRegistry<ID, E> {
 
 
 final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
-    int maxEvents;
-    int maxStreams;
+    int maxEvents = 20;
+    int maxStreams = 20;
     int maxQueuedEventsPerStream = 50;
     long threadKeepAliveTime = 1;
     Runnable onComplete;
@@ -394,7 +421,7 @@ final class SseRegistryBuilderImpl<ID, E> implements SseRegistryBuilder<ID, E>{
     Consumer<Throwable> onError;
     long timeout = 60_000L;
     EventEvictionPolicy eventEvictionPolicy = EventEvictionPolicy.FIFO;
-    Predicate<E> eventPredicate;
+    Predicate<E> eventPredicate = e -> true;
     private final static String TIMEOUT_NEGATIVE_MESSAGE = "Sse timeout cannot be negative";
     private final static String KEEP_ALIVE_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";
     private final static String MAX_QUEUED_EVENTS_NEGATIVE_MESSAGE = "Sse stream queue keep alive time cannot be negative";

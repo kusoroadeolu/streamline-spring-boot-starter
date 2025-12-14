@@ -25,14 +25,12 @@ final class EventHistory<E> {
         this.lock.lock();
         try {
             if (eventPredicate != null && eventPredicate.test(event)){
-              this.events.add(event);
                 if (this.events.size() < this.maxSize) return;
                 switch (policy){
                     case STRICT -> throw new EventHistoryLimitReachedException(ERR_MESSAGE.formatted(this.events.size()));
                     case FIFO -> this.events.removeFirst();
                     case LIFO -> this.events.removeLast();
                 }
-
             }
         } finally {
             lock.unlock();

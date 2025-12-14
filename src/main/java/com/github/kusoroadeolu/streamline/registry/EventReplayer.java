@@ -41,12 +41,22 @@ public final class EventReplayer<ID, E>{
         return stream.send(this.eventsToSend());
      }
 
+
      public CompletableFuture<Void> toAll(){
-         final var futures = new ArrayList<CompletableFuture<Void>>();
-         final var events  = this.eventsToSend();
-         streams.forEach((id, s) -> futures.add(CompletableFuture.runAsync(() -> s.send(events), this.executorService)));
-         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+         return this.toAllMatching(id -> true);
      }
+
+    public CompletableFuture<Void> toAllMatching(Predicate<ID> idPredicate){
+        final var futures = new ArrayList<CompletableFuture<Void>>();
+        final var events  = this.eventsToSend();
+        streams.forEach((id, s) -> futures.add(CompletableFuture.runAsync(() -> {
+            if (idPredicate.test(id)){
+                s.send(events);
+            }
+        }, this.executorService)));
+        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+    }
+
 
      private List<E> eventsToSend(){
         if (this.all) return this.events;
