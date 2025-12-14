@@ -2,6 +2,9 @@
 
 Thread safe SSE management for Spring Boot using virtual threads.
 
+## What is SSE
+Server Sent Events (SSE) is a standard HTTP mechanism for pushing unidirectional event streams from server to browser over a long lived http connection.
+
 ## What is this?
 A Spring Boot library that wraps Spring's `SseEmitter` with thread-safe management, automatic cleanup, and event replay. Built on virtual threads for blocking I/O at scale.
 
