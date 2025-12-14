@@ -15,7 +15,10 @@
     <description>streamline-spring-boot-starter</description>
     <url/>
     <licenses>
-        <license/>
+        <license>
+           <name> Apache 2.0 License </name>
+           <url> https://opensource.org/license/apache-2-0 </url>
+        </license>
     </licenses>
     <developers>
         <developer/>

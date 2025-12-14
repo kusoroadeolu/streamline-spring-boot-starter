@@ -203,6 +203,21 @@ const es = new EventSource('/orders/stream?userId=user-123');
 es.onmessage = (e) => console.log(JSON.parse(e.data));
 ```
 
+
+## Auto Configuration
+Streamline provides an autoconfigured SseRegistry bean when added to your project. No manual configuration required unless you want to customize it
+
+```java
+        @Bean(name = "defaultSseRegistry", destroyMethod = "shutdown")
+        @ConditionalOnMissingBean(SseRegistry.class)
+        public SseRegistry<Object, Object> defaultSseRegistry() {
+            return SseRegistry.builder()
+                    .maxStreams(100)
+                    .maxEvents(100)
+                    .build();
+        }
+```
+
 ## Requirements
 
 | Component | Requirement |
