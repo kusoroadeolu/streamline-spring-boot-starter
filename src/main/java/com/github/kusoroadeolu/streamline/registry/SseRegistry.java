@@ -284,16 +284,13 @@ public class SseRegistry<ID, E> {
      * new tasks from being accepted.
      *
      * <p>This method is idempotent, calling it multiple times has no effect.
-     *
-     * @return A {@link CompletableFuture} that completes when all streams
-     *         are completed and the executor is closed
      */
-     public CompletableFuture<Void> shutdown(){
-         if(this.isShutdown()) return CompletableFuture.completedFuture(null);
+     public void shutdown(){
+         if(this.isShutdown()) return;
 
          this.lifeCycleLock.lock();
          try {
-             if(this.isShutdown()) return CompletableFuture.completedFuture(null);
+             if(this.isShutdown()) return;
              this.status = RegistryStatus.SHUTDOWN;
          }finally {
              this.lifeCycleLock.unlock();
@@ -304,10 +301,9 @@ public class SseRegistry<ID, E> {
              final var c = CompletableFuture.runAsync(s::complete, this.registryExecutor);
              futures.add(c);
          });
-         futures.add(CompletableFuture.runAsync(this.registryExecutor::close)); //Close the exec after to reject new tasks. I actually realised that tasks maybe able to slip in if i completed the streams without closing the exec first.
-         //But don't block the main thread.
 
-         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+         CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+         this.registryExecutor.shutdown();
      }
      /**
       * @return true or false if the registry is shutdown or not
@@ -316,6 +312,19 @@ public class SseRegistry<ID, E> {
          return this.status == RegistryStatus.SHUTDOWN; //Should be correct 100% of the time with a 3% margin of error lol
      }
 
+    private boolean send(ID id, E event){
+        try {
+            if (this.isShutdown()) return false;
+            this.registerEvent(event);
+            final var stream = this.get(id);
+            if (stream == null) return false;
+            stream.send(event);
+            return true;
+        }catch (SseStreamCompletedException | CompletionException ignored){
+            return false;
+        }
+    }
+
     private void sendWithoutId(SseStream stream, E event){
         try {
             if (this.isShutdown()) return;
@@ -323,20 +332,6 @@ public class SseRegistry<ID, E> {
             if (stream == null) return;
             stream.send(event);
         }catch (SseStreamCompletedException | CompletionException ignored){
-        }
-    }
-
-    private boolean send(ID id, E event){
-        try {
-            if (this.isShutdown()) return false;
-            this.registerEvent(event);
-
-            final var stream = this.get(id);
-            if (stream == null) return false;
-            stream.send(event);
-            return true;
-        }catch (SseStreamCompletedException | CompletionException ignored){
-            return false;
         }
     }
 

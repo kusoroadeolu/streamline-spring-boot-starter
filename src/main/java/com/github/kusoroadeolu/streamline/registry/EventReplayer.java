@@ -70,7 +70,7 @@ public final class EventReplayer<ID, E>{
     }
 }
 
-final class EventReplayBuilder<ID, E> {
+public final class EventReplayBuilder<ID, E> {
     int from = -1;
     int to = -1;
     boolean all;
